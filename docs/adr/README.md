@@ -35,3 +35,4 @@
 | [0024](0024-ati-production-reliability.md) | ATI Production Reliability | Принято |
 | [0025](0025-production-telegram.md) | Production Telegram: бот, шаблоны, inline-кнопки | Принято |
 | [0026](0026-premium-ui-polish.md) | Премиальный полиш UI: двойная тема, living-motion | Принято |
+| [0027](0027-production-route-providers.md) | Production Route Providers: Yandex Truck + OSRM fallback | Принято |

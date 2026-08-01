@@ -238,7 +238,11 @@ class IntelligentMatchingService:
         cargo = match.cargo
         estimate = context.route_estimate
         if estimate is None:
-            estimate = await self._routes.estimate_for_cargo(cargo, trace_id=trace)
+            estimate = await self._routes.estimate_for_cargo(
+                cargo,
+                trace_id=trace,
+                vehicle_profile=context.vehicle_profile,
+            )
 
         empty_run_cost = Decimal(0)
         location = context.current_location

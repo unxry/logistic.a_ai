@@ -7,6 +7,7 @@ from app.infrastructure.storage.matching_repository import SqliteMatchingReposit
 from app.infrastructure.storage.notification_history_repository import (
     SqliteNotificationHistoryRepository,
 )
+from app.infrastructure.storage.route_cache_repository import SqliteRouteCacheRepository
 
 __all__ = [
     "Database",
@@ -14,4 +15,5 @@ __all__ = [
     "SqliteHistoryRepository",
     "SqliteMatchingRepository",
     "SqliteNotificationHistoryRepository",
+    "SqliteRouteCacheRepository",
 ]

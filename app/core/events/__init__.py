@@ -13,7 +13,15 @@ from app.core.events.notifications import (
     NotificationQueued,
     NotificationSending,
 )
-from app.core.events.routes import ProfitCalculated, RouteCalculated
+from app.core.events.routes import (
+    ProfitCalculated,
+    RouteCacheHit,
+    RouteCacheMiss,
+    RouteCalculated,
+    RouteCalculationFailed,
+    RouteFallbackUsed,
+    RouteProviderSelected,
+)
 from app.core.events.scheduler import (
     JobCompleted,
     JobFailed,
@@ -73,7 +81,12 @@ __all__ = [
     "NotificationQueued",
     "NotificationSending",
     "ProfitCalculated",
+    "RouteCacheHit",
+    "RouteCacheMiss",
     "RouteCalculated",
+    "RouteCalculationFailed",
+    "RouteFallbackUsed",
+    "RouteProviderSelected",
     "SchedulerStarted",
     "SchedulerStopped",
     "SearchCompleted",

@@ -63,6 +63,11 @@ class VehicleProfile:
     updated_at: datetime
     max_weight_kg: int | None = None
     allowed_regions: tuple[str, ...] = ()
+    empty_weight_kg: int | None = None
+    axle_weight_kg: int | None = None
+    vehicle_permits: tuple[str, ...] = ()
+    has_trailer: bool = False
+    eco_class: int | None = None
 
     @classmethod
     def create(
@@ -79,6 +84,11 @@ class VehicleProfile:
         pallet_capacity: int,
         max_weight_kg: int | None = None,
         allowed_regions: tuple[str, ...] = (),
+        empty_weight_kg: int | None = None,
+        axle_weight_kg: int | None = None,
+        vehicle_permits: tuple[str, ...] = (),
+        has_trailer: bool = False,
+        eco_class: int | None = None,
     ) -> VehicleProfile:
         """Создать профиль с новым id и текущим временем UTC."""
         now = utc_now()
@@ -97,4 +107,9 @@ class VehicleProfile:
             updated_at=now,
             max_weight_kg=max_weight_kg,
             allowed_regions=allowed_regions,
+            empty_weight_kg=empty_weight_kg,
+            axle_weight_kg=axle_weight_kg,
+            vehicle_permits=vehicle_permits,
+            has_trailer=has_trailer,
+            eco_class=eco_class,
         )

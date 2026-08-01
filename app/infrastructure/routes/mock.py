@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from app.core.models.routes import PROVIDER_CONFIDENCE, RouteEstimate
+from app.core.models.routes import PROVIDER_CONFIDENCE, RouteEstimate, RouteRequest
 
 # (откуда, куда) → (километры, часы); поиск симметричный.
 _DEFAULT_ROUTES: dict[tuple[str, str], tuple[float, float]] = {
@@ -36,13 +36,25 @@ class MockRouteProvider:
         self._confidence = confidence_score
         self.calls = 0  # наблюдаемость для тестов кэширования
 
-    async def calculate_route(self, origin: str, destination: str) -> RouteEstimate | None:
+    async def calculate_route(
+        self,
+        origin: str,
+        destination: str,
+        *,
+        request: RouteRequest | None = None,
+    ) -> RouteEstimate | None:
         """Геометрия направления; ``None`` — направления нет в таблице."""
         self.calls += 1
         if not origin or not destination:
             return None
         if origin == destination:
-            return RouteEstimate(distance_km=0.0, duration_hours=0.0, confidence_score=100)
+            return RouteEstimate(
+                distance_km=0.0,
+                duration_hours=0.0,
+                confidence_score=100,
+                provider="mock",
+                provider_label="Mock",
+            )
         leg = self._routes.get((origin, destination)) or self._routes.get((destination, origin))
         if leg is None:
             return None
@@ -51,4 +63,7 @@ class MockRouteProvider:
             distance_km=distance_km,
             duration_hours=duration_hours,
             confidence_score=self._confidence,
+            provider="mock",
+            provider_label="Mock",
+            warnings=("Mock route provider: dev/offline estimate",),
         )

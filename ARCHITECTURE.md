@@ -120,7 +120,7 @@ LogistAI/
 │   ├── infrastructure/
 │   │   ├── telegram/        # TelegramClient (httpx), RetryPolicy, маппинг ошибок
 │   │   ├── notifications/   # каналы: telegram, macos_native (позже email, discord…)
-│   │   ├── routes/          # MockRouteProvider; v0.3+: OSRM, Яндекс, Google, HERE
+│   │   ├── routes/          # Yandex Truck, OSRM fallback, MockRouteProvider
 │   │   ├── settings/        # JsonSettingsRepository, KeyringSecretStore
 │   │   ├── storage/         # Database (sqlite3, WAL), миграции, SqliteHistoryRepository
 │   │   ├── logging/         # setup, RingBufferHandler, EventBusLogHandler
@@ -355,15 +355,23 @@ CargoRejectedByPreference, MatchingDecisionCreated, ProfitCalculated) —
 N минут» однократно до восстановления. `DailyAnalyticsReportJob` — «Отчёт
 LogistAI» через Scheduler и Notification Center.
 
-### 5.17 Route Intelligence (ADR-0020)
+### 5.17 Route Intelligence (ADR-0020, ADR-0027)
 
 ```
-RouteProvider (порт, async) ──▶ RouteService ──▶ RouteEstimate
-  MockRouteProvider │ OSRM │        │ кэш, RouteCalculated, синтетика
-  Яндекс │ Google │ HERE            ▼
-                              RouteCostCalculator (RouteCostPolicy из настроек)
-                                    ▼
-                              CargoProfitCalculator → ProfitAnalysis
+Matching / Profit Calculator
+        ↓
+RouteService
+        ↓
+CompositeRouteProvider
+        ├── YandexTruckRouteProvider (mode=truck, VehicleProfile → RouteVehicleParameters)
+        ├── OsrmRouteProvider (approximate fallback)
+        └── MockRouteProvider (offline/dev аварийный резерв)
+        ↓
+RouteEstimate
+        ↓
+RouteCostCalculator (RouteCostPolicy из настроек)
+        ↓
+CargoProfitCalculator → ProfitAnalysis
 ```
 
 Разделение обязанностей: провайдер знает **геометрию** (расстояние, время,
@@ -376,6 +384,15 @@ RouteProvider (порт, async) ──▶ RouteService ──▶ RouteEstimate
 публикуется). Эталон дефолтов: Москва → Санкт-Петербург, 710 км / 10 ч →
 14 910 + 6 390 + 7 100 + 6 600 = 35 000 ₽ расходов; при доходе 120 000 ₽ —
 85 000 ₽ чистыми, 120 ₽/км, 8 500 ₽/ч.
+
+Production routing живёт только в `app/infrastructure/routes/`: Yandex получает
+координаты через `GeocodingProvider`, отправляет `mode=truck` и параметры
+массы/габаритов; OSRM помечается как приблизительный route без truck
+restrictions/traffic/tolls; SQLite route cache хранится через
+`RouteCacheRepository` и TTL-политику `RouteCachePolicy`. События
+`RouteProviderSelected`, `RouteCacheHit/Miss`, `RouteFallbackUsed` и
+`RouteCalculationFailed` кормят route metrics и cooldown-уведомления о
+деградации/восстановлении Yandex.
 
 ### 5.18 UI-контракты: presentation-слой без Qt (ADR-0021)
 
@@ -545,3 +562,4 @@ Production-надёжность (ADR-0024): CargoDeduplicationService (дубл�
 | [0023](docs/adr/0023-ati-integration.md) | ATI Integration: production-источник грузов |
 | [0024](docs/adr/0024-ati-production-reliability.md) | ATI Production Reliability |
 | [0025](docs/adr/0025-production-telegram.md) | Production Telegram: бот, шаблоны, inline-кнопки |
+| [0027](docs/adr/0027-production-route-providers.md) | Production Route Providers: Yandex Truck + OSRM fallback |

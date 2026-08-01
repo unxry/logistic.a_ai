@@ -70,6 +70,38 @@ class SourceUnavailableError(SourceError):
     """Источник временно недоступен."""
 
 
+class RouteError(LogistAIError):
+    """Ошибка расчёта маршрута или геокодирования."""
+
+
+class RouteAuthenticationError(RouteError):
+    """Провайдер маршрутов отверг ключ или права доступа."""
+
+
+class RouteRateLimitError(RouteError):
+    """Провайдер маршрутов ограничил частоту запросов."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class RouteNetworkError(RouteError):
+    """Сетевая ошибка провайдера маршрутов."""
+
+
+class RouteNotFoundError(RouteError):
+    """Провайдер не смог построить маршрут."""
+
+
+class RouteProviderUnavailableError(RouteError):
+    """Провайдер временно недоступен или вернул 5xx."""
+
+
+class GeocodingError(RouteError):
+    """Ошибка геокодирования точки маршрута."""
+
+
 class DuplicateSourceError(SourceError):
     """Источник с таким id уже зарегистрирован."""
 

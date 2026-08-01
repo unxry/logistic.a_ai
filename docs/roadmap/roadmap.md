@@ -40,6 +40,8 @@
 | 9.6 | Production Validation: нагрузка 1000 грузов + benchmark, контрактные фикстуры, CargoUpdated, cooldown уведомлений, production-метрики здоровья, security-аудит | ✅ |
 | 9.7 | Production Telegram: бот (/status /search /report /settings через Router+CommandBus), категорные HTML-шаблоны, inline-кнопки, BotFather-гайд | ✅ |
 | 9.8 | Premium macOS UI Polish (AAA): двойная тема Light/Dark, капсула сайдбара + статус-пилюля + футер-бейджи, живые окончания ScoreRing/Sparkline, каскадные появления и переходы страниц, macOS sheet, Raycast-палитра, 3 уровня тени, скроллбары-невидимки, иллюстрированные empty states | ✅ |
+| 9.9 | Dispatcher Workspace: lifecycle статусов грузов, избранное, ignore blacklist, notification history, menu bar, autostart, SQLite cargo history, dispatcher analytics | ✅ |
+| 10.0 | Production Route Providers: Yandex Truck Routing, OSRM fallback, geocoding, SQLite route cache, fallback observability, demo/live route smoke | ✅ |
 
 ## v0.4 — распространение (этап 10)
 

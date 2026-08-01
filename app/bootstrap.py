@@ -13,6 +13,7 @@ import asyncio
 import logging
 import os
 import sys
+from decimal import Decimal
 
 from app.buses import CommandBus, EventBus
 from app.container import AppContainer
@@ -31,12 +32,26 @@ from app.core.commands import (
     VerifyTelegram,
 )
 from app.core.events import AppStarted
+from app.core.models.logistics.cargo import Cargo
 from app.core.models.logistics.compatibility import BasicCompatibilityChecker
 from app.core.models.logistics.driver_profile import DriverProfile
-from app.core.models.logistics.vehicle_profile import VehicleProfile
+from app.core.models.logistics.vehicle_profile import BodyType, VehicleProfile, VehicleType
+from app.core.models.routes import RouteCachePolicy, RouteRequest, RouteVehicleParameters
+from app.core.ports.source_credentials import CRED_API_KEY
 from app.infrastructure.logging.setup import setup_logging
 from app.infrastructure.notifications.macos import MacOSNotificationChannel
-from app.infrastructure.routes import MockRouteProvider
+from app.infrastructure.routes import (
+    CachedGeocodingProvider,
+    CompositeRouteProvider,
+    FallbackGeocodingProvider,
+    MockRouteProvider,
+    OsrmRouteProvider,
+    OsrmRoutesClient,
+    StaticGeocodingProvider,
+    YandexGeocodingProvider,
+    YandexRoutesClient,
+    YandexTruckRouteProvider,
+)
 from app.infrastructure.settings.json_repository import JsonSettingsRepository
 from app.infrastructure.settings.secret_store import KeyringSecretStore
 from app.infrastructure.sources.ati import AtiClient, AtiSource
@@ -49,6 +64,7 @@ from app.infrastructure.storage.matching_repository import SqliteMatchingReposit
 from app.infrastructure.storage.notification_history_repository import (
     SqliteNotificationHistoryRepository,
 )
+from app.infrastructure.storage.route_cache_repository import SqliteRouteCacheRepository
 from app.infrastructure.system.autostart import MacOSLaunchAgentAutostart
 from app.infrastructure.system.build_info import load_build_info
 from app.infrastructure.system.paths import PlatformPaths
@@ -71,6 +87,8 @@ from app.services.monitoring import (
     AnalyticsCollector,
     DailyAnalyticsReportJob,
     DecisionPersister,
+    RouteAvailabilityNotifier,
+    RouteMetricsCollector,
     SourceHealthCheckJob,
     SourceHealthMonitor,
 )
@@ -127,7 +145,12 @@ SETTINGS_FILENAME = "settings.json"
 DATABASE_FILENAME = "logistai.db"
 
 
-def build_container(*, demo_dashboard: bool = False, demo_ati: bool = False) -> AppContainer:
+def build_container(
+    *,
+    demo_dashboard: bool = False,
+    demo_ati: bool = False,
+    demo_routes: bool = False,
+) -> AppContainer:
     """Собрать все зависимости приложения.
 
     Порядок: пути → шины → логирование → настройки/секреты → хранилище →
@@ -225,10 +248,18 @@ def build_container(*, demo_dashboard: bool = False, demo_ati: bool = False) -> 
         notifications=notification_service,
     )
 
-    # Route Intelligence: провайдер геометрии (пока детерминированная таблица,
-    # реальные карты — за тем же портом), тарифы из настроек, кэш и события.
+    # Route Intelligence: production chain Yandex Truck → OSRM → cache/mock.
+    # Matching и ProfitCalculator видят только порт RouteProvider и RouteEstimate.
+    route_cache_repository = SqliteRouteCacheRepository(database)
+    route_provider = _build_route_provider(
+        settings_service=settings_service,
+        source_credentials=source_credentials,
+        cache=route_cache_repository,
+        event_bus=event_bus,
+        demo_routes=demo_routes,
+    )
     route_service = RouteService(
-        provider=MockRouteProvider(),
+        provider=route_provider,
         costs=RouteCostCalculator(settings_service.current.routing),
         event_bus=event_bus,
     )
@@ -254,6 +285,8 @@ def build_container(*, demo_dashboard: bool = False, demo_ati: bool = False) -> 
     matching_repository = SqliteMatchingRepository(database)
     analytics_collector = AnalyticsCollector()
     analytics_collector.attach(event_bus)
+    RouteMetricsCollector().attach(event_bus)
+    RouteAvailabilityNotifier(notification_service).attach(event_bus)
     DecisionPersister(matching_repository).attach(event_bus)
     health_monitor = SourceHealthMonitor(
         health_provider=lambda: {
@@ -406,6 +439,151 @@ def build_container(*, demo_dashboard: bool = False, demo_ati: bool = False) -> 
     )
 
 
+def _build_route_provider(
+    *,
+    settings_service: SettingsService,
+    source_credentials: KeychainSourceCredentialProvider,
+    cache: SqliteRouteCacheRepository,
+    event_bus: EventBus,
+    demo_routes: bool,
+) -> CompositeRouteProvider:
+    """Production route chain: Yandex Truck → OSRM → Mock, with SQLite cache."""
+    routing = settings_service.current.routing
+
+    def yandex_api_key() -> str | None:
+        return source_credentials.get(routing.yandex_credentials_reference, CRED_API_KEY)
+
+    static_geocoder = StaticGeocodingProvider()
+    if demo_routes:
+        geocoder = CachedGeocodingProvider(
+            inner=static_geocoder,
+            cache=cache,
+            policy=RouteCachePolicy(),
+        )
+        yandex_client = _demo_yandex_routes_client()
+    else:
+        live_geocoder = YandexGeocodingProvider(api_key_provider=yandex_api_key)
+        geocoder = CachedGeocodingProvider(
+            inner=FallbackGeocodingProvider((live_geocoder, static_geocoder)),
+            cache=cache,
+            policy=RouteCachePolicy(),
+        )
+        yandex_client = YandexRoutesClient(api_key_provider=yandex_api_key)
+
+    return CompositeRouteProvider(
+        yandex=YandexTruckRouteProvider(client=yandex_client, geocoder=geocoder),
+        osrm=OsrmRouteProvider(
+            client=OsrmRoutesClient(base_url=routing.osrm_base_url),
+            geocoder=geocoder,
+        ),
+        mock=MockRouteProvider(),
+        geocoder=geocoder,
+        cache=cache,
+        events=event_bus,
+        cache_policy=RouteCachePolicy(),
+        provider_choice=routing.provider,
+        cache_enabled=routing.cache_enabled,
+        fallback_enabled=routing.fallback_enabled,
+    )
+
+
+def _demo_yandex_routes_client() -> YandexRoutesClient:
+    """Yandex client on MockTransport for deterministic --demo-routes."""
+    import httpx
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "traffic_type": "forecast",
+                "route": {
+                    "legs": [
+                        {
+                            "steps": [
+                                {
+                                    "length": 726_000,
+                                    "duration": 36_720,
+                                    "polyline": {
+                                        "points": [
+                                            [55.755864, 37.617698],
+                                            [55.796127, 49.106414],
+                                        ]
+                                    },
+                                }
+                            ]
+                        }
+                    ],
+                    "flags": {"hasTolls": True},
+                },
+            },
+        )
+
+    return YandexRoutesClient(
+        api_key_provider=lambda: "demo-key",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+
+
+async def _run_routes_smoke(container: AppContainer) -> None:
+    """Demo route smoke: geocoding → Yandex truck route → cost/profit recalculation."""
+    from app.services.matching.profit_calculator import CargoProfitCalculator
+
+    vehicle = VehicleProfile.create(
+        name="12t demo truck",
+        vehicle_type=VehicleType.TRUCK,
+        body_type=BodyType.TENT,
+        cargo_capacity_kg=12_000,
+        length_cm=820,
+        width_cm=250,
+        height_cm=380,
+        volume_m3=78.0,
+        pallet_capacity=18,
+        max_weight_kg=18_000,
+        empty_weight_kg=6_000,
+    )
+    cargo = Cargo(
+        id="demo-route-001",
+        source_id="demo",
+        title="Москва → Казань",
+        loading_region="Москва",
+        unloading_region="Казань",
+        payment_amount=Decimal("120000"),
+        distance_km=726.0,
+    )
+    route_request = RouteRequest(
+        origin=cargo.loading_region,
+        destination=cargo.unloading_region,
+        vehicle=RouteVehicleParameters.from_profile(vehicle),
+        traffic_enabled=True,
+        alternatives=1,
+    )
+    estimate = await container.route_service.estimate(
+        cargo.loading_region,
+        cargo.unloading_region,
+        trace_id="demo-routes",
+        request=route_request,
+    )
+    if estimate is None:
+        logger.error("Yandex truck route: mocked failure")
+        return
+    analysis = CargoProfitCalculator().analyze(cargo, estimate)
+    if analysis is None:
+        logger.error("Net profit recalculation failed")
+        print("Net profit recalculation failed")
+        return
+    tolls = "yes" if estimate.has_tolls else "no"
+    lines = (
+        "Yandex truck route: mocked success",
+        f"Distance: {estimate.distance_km:.0f} km",
+        f"Duration: {estimate.duration_hours * 60:.0f} min",
+        f"Tolls: {tolls}",
+        f"Net profit recalculated: {analysis.net_profit} ₽",
+    )
+    for line in lines:
+        logger.info(line)
+        print(line)
+
+
 def _build_telegram_bot(
     *,
     settings_service: SettingsService,
@@ -536,6 +714,15 @@ def _build_telegram_bot(
 
 def run_app(argv: list[str] | None = None) -> int:
     """Запустить приложение LogistAI (петля qasync). Возвращает код выхода."""
+    raw_args = argv if argv is not None else sys.argv
+    if "--demo-routes-smoke" in raw_args:
+        container = build_container(demo_routes=True)
+        try:
+            asyncio.run(_run_routes_smoke(container))
+        finally:
+            container.database.close()
+        return 0
+
     # Локальный импорт: Qt не должен подтягиваться при импорте модуля,
     # чтобы ядро и тесты без GUI-окружения работали свободно.
     from PySide6.QtWidgets import QApplication
@@ -547,10 +734,12 @@ def run_app(argv: list[str] | None = None) -> int:
     from app.ui.viewmodels.main_viewmodel import MainViewModel
     from app.ui.widgets import Command
 
-    raw_args = argv if argv is not None else sys.argv
     demo = "--demo" in raw_args or os.environ.get("LOGISTAI_DEMO") == "1"
     demo_ati = "--demo-ati" in raw_args or os.environ.get("LOGISTAI_DEMO_ATI") == "1"
-    app = QApplication([arg for arg in raw_args if arg not in ("--demo", "--demo-ati")])
+    demo_routes = "--demo-routes" in raw_args or os.environ.get("LOGISTAI_DEMO_ROUTES") == "1"
+    app = QApplication(
+        [arg for arg in raw_args if arg not in ("--demo", "--demo-ati", "--demo-routes")]
+    )
     app.setApplicationName(APP_NAME)
     app.setOrganizationDomain(ORGANIZATION_DOMAIN)
     app.setQuitOnLastWindowClosed(False)
@@ -558,7 +747,11 @@ def run_app(argv: list[str] | None = None) -> int:
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
-    container = build_container(demo_dashboard=demo and not demo_ati, demo_ati=demo_ati)
+    container = build_container(
+        demo_dashboard=demo and not demo_ati,
+        demo_ati=demo_ati,
+        demo_routes=demo_routes,
+    )
     # Тема (Light/Dark) применяется из настроек ДО сборки окна: QSS всех
     # виджетов собирается из токенов в момент конструирования.
     from app.ui.theme import tokens as ui_tokens
@@ -568,7 +761,13 @@ def run_app(argv: list[str] | None = None) -> int:
     logger.info(
         "LogistAI %s запускается%s",
         container.build_info.display(),
-        " (демо-режим)" if demo else (" (демо ATI)" if demo_ati else ""),
+        (
+            " (демо маршрутов)"
+            if demo_routes
+            else " (демо-режим)"
+            if demo
+            else (" (демо ATI)" if demo_ati else "")
+        ),
     )
 
     def _show_demo_cargo() -> None:
@@ -618,6 +817,8 @@ def run_app(argv: list[str] | None = None) -> int:
         await container.command_bus.dispatch(StartScheduler())
         # Telegram-бот: молчит, если токен не настроен (лог, не ошибка).
         await container.telegram_bot.start()
+        if demo_routes:
+            await _run_routes_smoke(container)
         if demo_ati:
             await _run_ati_smoke()
         elif demo:

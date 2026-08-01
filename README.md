@@ -19,6 +19,7 @@ Python 3.13+ · PySide6 · qasync · httpx · SQLite · platformdirs · keyring
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Стиль кода, правила ревью, процесс этапов |
 | [docs/adr/](docs/adr/) | Architecture Decision Records — почему приняты ключевые решения |
 | [docs/development/](docs/development/) | Настройка окружения, команды |
+| [docs/routing.md](docs/routing.md) | Production routing: Yandex Truck, OSRM fallback, cache, smoke |
 | [docs/roadmap/](docs/roadmap/) | План версий |
 | [LICENSE](LICENSE) | Проприетарная лицензия |
 
@@ -29,6 +30,7 @@ uv sync                                            # зависимости (+de
 mv pre-commit-config.yaml .pre-commit-config.yaml  # однократно
 uv run pre-commit install                          # git-хуки (однократно, обязательно)
 uv run python main.py          # запуск приложения
+uv run python main.py --demo-routes  # demo-smoke маршрута Yandex Truck
 uv run pytest                  # тесты
 uv run ruff format .           # форматирование
 uv run ruff check .            # линтер
@@ -91,6 +93,22 @@ uv run python main.py --demo-ati
 лучший груз найден → AI Score рассчитан → уведомление отправлено».
 Эндпоинты и маппинг полей боевого API собраны константами в
 `app/infrastructure/sources/ati/{client,mapper}.py` (см. ADR-0023).
+
+## Маршруты
+
+Production routing использует цепочку Yandex Truck → OSRM → Mock через
+существующий порт `RouteProvider`. Yandex API key хранится только в SecretStore
+по ссылке `source:yandex_routes:api_key`; в JSON сохраняется только
+`yandex_credentials_reference`.
+
+```bash
+uv run python main.py --demo-routes
+uv run python main.py --demo-routes-smoke
+YANDEX_ROUTER_API_KEY="..." uv run python scripts/yandex_routes_smoke.py
+uv run python scripts/route_cache_benchmark.py --count 100000
+```
+
+Подробнее: [docs/routing.md](docs/routing.md).
 
 ## Структура
 

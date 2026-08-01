@@ -15,7 +15,7 @@ from typing import Any
 
 from app.core.models.logistics.vehicle_profile import BodyType, VehicleProfile, VehicleType
 from app.core.models.matching import MatchingWeights
-from app.core.models.routes import RouteCostPolicy
+from app.core.models.routes import RouteCostPolicy, RouteProviderChoice
 from app.core.models.settings import (
     SCHEMA_VERSION,
     AppSettings,
@@ -65,6 +65,15 @@ def settings_to_dict(settings: AppSettings) -> dict[str, Any]:
             "maintenance_cost_per_km": float(settings.routing.maintenance_cost_per_km),
             "driver_cost_per_hour": float(settings.routing.driver_cost_per_hour),
             "average_speed_kmh": settings.routing.average_speed_kmh,
+            "provider": settings.routing.provider.value,
+            "yandex_credentials_reference": settings.routing.yandex_credentials_reference,
+            "osrm_base_url": settings.routing.osrm_base_url,
+            "traffic_enabled": settings.routing.traffic_enabled,
+            "avoid_tolls": settings.routing.avoid_tolls,
+            "avoid_unpaved": settings.routing.avoid_unpaved,
+            "alternatives_count": settings.routing.alternatives_count,
+            "cache_enabled": settings.routing.cache_enabled,
+            "fallback_enabled": settings.routing.fallback_enabled,
         },
         "matching": {
             "compatibility": settings.matching.compatibility,
@@ -148,6 +157,21 @@ def _routing(section: Mapping[str, Any], default: RouteCostPolicy) -> RouteCostP
                 section.get("driver_cost_per_hour"), default.driver_cost_per_hour
             ),
             average_speed_kmh=_float(section.get("average_speed_kmh"), default.average_speed_kmh),
+            provider=_enum(RouteProviderChoice, section.get("provider"), default.provider),
+            yandex_credentials_reference=_str(
+                section.get("yandex_credentials_reference"),
+                default.yandex_credentials_reference,
+            ),
+            osrm_base_url=_str(section.get("osrm_base_url"), default.osrm_base_url),
+            traffic_enabled=_bool(section.get("traffic_enabled"), default.traffic_enabled),
+            avoid_tolls=_bool(section.get("avoid_tolls"), default.avoid_tolls),
+            avoid_unpaved=_bool(section.get("avoid_unpaved"), default.avoid_unpaved),
+            alternatives_count=_int(
+                section.get("alternatives_count"),
+                default.alternatives_count,
+            ),
+            cache_enabled=_bool(section.get("cache_enabled"), default.cache_enabled),
+            fallback_enabled=_bool(section.get("fallback_enabled"), default.fallback_enabled),
         )
     except ValueError:
         return default
@@ -181,6 +205,11 @@ def _profile_to_dict(profile: VehicleProfile) -> dict[str, Any]:
         "pallet_capacity": profile.pallet_capacity,
         "max_weight_kg": profile.max_weight_kg,
         "allowed_regions": list(profile.allowed_regions),
+        "empty_weight_kg": profile.empty_weight_kg,
+        "axle_weight_kg": profile.axle_weight_kg,
+        "vehicle_permits": list(profile.vehicle_permits),
+        "has_trailer": profile.has_trailer,
+        "eco_class": profile.eco_class,
         "created_at": profile.created_at.isoformat(),
         "updated_at": profile.updated_at.isoformat(),
     }
@@ -203,6 +232,11 @@ def _profile_from_dict(item: Mapping[str, Any]) -> VehicleProfile:
         updated_at=datetime.fromisoformat(str(item["updated_at"])),
         max_weight_kg=int(max_weight) if max_weight is not None else None,
         allowed_regions=tuple(str(r) for r in item.get("allowed_regions", ())),
+        empty_weight_kg=_opt_int(item.get("empty_weight_kg")),
+        axle_weight_kg=_opt_int(item.get("axle_weight_kg")),
+        vehicle_permits=tuple(str(r) for r in item.get("vehicle_permits", ())),
+        has_trailer=_bool(item.get("has_trailer"), False),
+        eco_class=_opt_int(item.get("eco_class")),
     )
 
 
@@ -265,6 +299,10 @@ def _str(value: Any, default: str) -> str:
 
 def _opt_str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _opt_int(value: Any) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _str_tuple(value: Any, default: tuple[str, ...]) -> tuple[str, ...]:

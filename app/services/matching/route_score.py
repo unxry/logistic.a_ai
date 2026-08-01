@@ -60,5 +60,14 @@ class RouteScoreCalculator:
                 score -= _TOLL_SHARE_PENALTY
                 notes.append("Высокая доля платных дорог")
             if estimate.confidence_score < 50:
+                score -= 5
                 notes.append("Маршрут оценён приблизительно")
+            if estimate.provider_label:
+                notes.append(f"Провайдер маршрута: {estimate.provider_label}")
+            if estimate.traffic_duration_hours is not None:
+                notes.append(f"Время с трафиком: {estimate.traffic_duration_hours:.1f} ч")
+            if estimate.has_tolls is True:
+                notes.append("Платные дороги: есть")
+            if estimate.warnings:
+                notes.extend(estimate.warnings[:2])
         return max(0, min(100, score)), tuple(notes)

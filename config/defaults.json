@@ -30,7 +30,16 @@
     "toll_cost_per_km": 9,
     "maintenance_cost_per_km": 10,
     "driver_cost_per_hour": 660,
-    "average_speed_kmh": 71.0
+    "average_speed_kmh": 71.0,
+    "provider": "auto",
+    "yandex_credentials_reference": "yandex_routes",
+    "osrm_base_url": "https://router.project-osrm.org",
+    "traffic_enabled": true,
+    "avoid_tolls": false,
+    "avoid_unpaved": false,
+    "alternatives_count": 1,
+    "cache_enabled": true,
+    "fallback_enabled": true
   },
   "matching": {
     "compatibility": 0.3,

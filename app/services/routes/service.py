@@ -11,11 +11,18 @@ RouteCostCalculator. Неизвестное провайдеру направл�
 from __future__ import annotations
 
 import logging
+import time
 from decimal import Decimal
 
 from app.core.events import RouteCalculated
 from app.core.models.logistics.cargo import Cargo
-from app.core.models.routes import Route, RouteEstimate
+from app.core.models.logistics.vehicle_profile import VehicleProfile
+from app.core.models.routes import (
+    Route,
+    RouteEstimate,
+    RouteRequest,
+    RouteVehicleParameters,
+)
 from app.core.ports import EventPublisher, RouteProvider
 from app.services.routes.cost_calculator import RouteCostCalculator
 
@@ -38,7 +45,7 @@ class RouteService:
         self._provider = provider
         self._costs = costs
         self._events = event_bus
-        self._cache: dict[tuple[str, str], RouteEstimate] = {}
+        self._cache: dict[str, RouteEstimate] = {}
         self._cache_limit = cache_limit
 
     @property
@@ -47,19 +54,28 @@ class RouteService:
         return self._costs
 
     async def estimate(
-        self, origin: str, destination: str, *, trace_id: str = ""
+        self,
+        origin: str,
+        destination: str,
+        *,
+        trace_id: str = "",
+        request: RouteRequest | None = None,
     ) -> RouteEstimate | None:
         """Маршрут точка→точка; ``None`` — нет провайдера или направление неизвестно."""
         origin = origin.strip()
         destination = destination.strip()
         if not origin or not destination or self._provider is None:
             return None
-        key = (origin, destination)
+        route_request = self._prepare_request(
+            request if request is not None else RouteRequest.simple(origin, destination)
+        )
+        key = self._memory_key(route_request)
         cached = self._cache.get(key)
         if cached is not None:
             return cached
         try:
-            raw = await self._provider.calculate_route(origin, destination)
+            started = time.perf_counter()
+            raw = await self._provider.calculate_route(origin, destination, request=route_request)
         except Exception:
             logger.exception("Провайдер маршрутов не ответил (%s → %s)", origin, destination)
             return None
@@ -68,14 +84,36 @@ class RouteService:
         estimate = self._costs.enrich(raw)
         self._remember(key, estimate)
         self._events.publish(
-            RouteCalculated(route=Route.create(origin, destination, estimate), trace_id=trace_id)
+            RouteCalculated(
+                route=Route.create(origin, destination, estimate),
+                trace_id=trace_id,
+                latency_ms=int((time.perf_counter() - started) * 1000),
+            )
         )
         return estimate
 
-    async def estimate_for_cargo(self, cargo: Cargo, *, trace_id: str = "") -> RouteEstimate | None:
+    async def estimate_for_cargo(
+        self,
+        cargo: Cargo,
+        *,
+        trace_id: str = "",
+        vehicle_profile: VehicleProfile | None = None,
+    ) -> RouteEstimate | None:
         """Маршрут груза; провайдер молчит — синтетика из расстояния объявления."""
+        request = RouteRequest(
+            origin=cargo.loading_region,
+            destination=cargo.unloading_region,
+            vehicle=RouteVehicleParameters.from_profile(vehicle_profile),
+            avoid_tolls=self._costs.policy.avoid_tolls,
+            avoid_unpaved=self._costs.policy.avoid_unpaved,
+            alternatives=self._costs.policy.alternatives_count,
+            traffic_enabled=self._costs.policy.traffic_enabled,
+        )
         estimate = await self.estimate(
-            cargo.loading_region, cargo.unloading_region, trace_id=trace_id
+            cargo.loading_region,
+            cargo.unloading_region,
+            trace_id=trace_id,
+            request=request,
         )
         if estimate is not None:
             return estimate
@@ -94,7 +132,42 @@ class RouteService:
             return Decimal(0)
         return self._costs.empty_run_cost(estimate.distance_km)
 
-    def _remember(self, key: tuple[str, str], estimate: RouteEstimate) -> None:
+    def _remember(self, key: str, estimate: RouteEstimate) -> None:
         if len(self._cache) >= self._cache_limit:
             self._cache.pop(next(iter(self._cache)))
         self._cache[key] = estimate
+
+    @staticmethod
+    def _memory_key(request: RouteRequest) -> str:
+        vehicle = request.vehicle
+        return "|".join(
+            (
+                request.origin,
+                request.destination,
+                str(vehicle.actual_weight_tons) if vehicle else "",
+                str(vehicle.max_weight_tons) if vehicle else "",
+                str(vehicle.height_m) if vehicle else "",
+                str(vehicle.width_m) if vehicle else "",
+                str(vehicle.length_m) if vehicle else "",
+                str(request.avoid_tolls),
+                str(request.avoid_unpaved),
+            )
+        )
+
+    def _prepare_request(self, request: RouteRequest) -> RouteRequest:
+        return RouteRequest(
+            origin=request.origin,
+            destination=request.destination,
+            origin_point=request.origin_point,
+            destination_point=request.destination_point,
+            vehicle=request.vehicle,
+            departure_at=request.departure_at,
+            avoid_tolls=request.avoid_tolls or self._costs.policy.avoid_tolls,
+            avoid_unpaved=request.avoid_unpaved or self._costs.policy.avoid_unpaved,
+            alternatives=(
+                request.alternatives
+                if request.alternatives != 1
+                else self._costs.policy.alternatives_count
+            ),
+            traffic_enabled=request.traffic_enabled and self._costs.policy.traffic_enabled,
+        )

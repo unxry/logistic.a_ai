@@ -153,6 +153,31 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE INDEX idx_notification_history_trace ON notification_history(trace_id);
         """,
     ),
+    (
+        5,
+        """
+        CREATE TABLE route_cache (
+            cache_key TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            estimate_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_route_cache_expires ON route_cache(expires_at);
+        CREATE INDEX idx_route_cache_provider ON route_cache(provider);
+
+        CREATE TABLE geocoding_cache (
+            location_key TEXT PRIMARY KEY,
+            latitude TEXT NOT NULL,
+            longitude TEXT NOT NULL,
+            normalized_name TEXT NOT NULL DEFAULT '',
+            confidence INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_geocoding_cache_expires ON geocoding_cache(expires_at);
+        """,
+    ),
 )
 
 
