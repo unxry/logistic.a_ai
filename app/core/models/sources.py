@@ -34,6 +34,7 @@ class SourceStatus(Enum):
     """Состояние здоровья источника."""
 
     ONLINE = "online"
+    AUTHENTICATED_NO_MARKET_ACCESS = "authenticated_no_market_access"
     DEGRADED = "degraded"
     FAILED = "failed"
     DISABLED = "disabled"

@@ -23,7 +23,7 @@ from app.core.models.logistics.compatibility import BasicCompatibilityChecker
 from app.core.models.logistics.driver_profile import DriverProfile
 from app.core.models.notification import Notification, NotificationCategory
 from app.core.models.settings import AppSettings
-from app.core.models.sources import AtiTokenState, SourceConfiguration, SourceContext
+from app.core.models.sources import AtiTokenState, SourceConfiguration, SourceContext, SourceStatus
 from app.core.ports.source_credentials import CRED_ACCESS_TOKEN, CRED_TOKEN_EXPIRES_AT
 from app.infrastructure.routes import MockRouteProvider
 from app.infrastructure.sources.ati import AtiAuthProvider, AtiCargoMapper, AtiClient, AtiSource
@@ -451,6 +451,7 @@ def test_mapper_nested_real_payload_preserves_everything() -> None:
     assert raw.attributes["loading_date"] == "2026-08-01"
     assert raw.attributes["delivery_deadline"] == "2026-08-03"
     assert raw.raw["неизвестное_поле"] == {"вложенное": True}  # raw_metadata не теряется
+    assert raw.url == "https://ati.su/cargo/42"
 
     cargo = CargoNormalizer().normalize(raw, "ati")
     assert cargo.weight_kg == 5500
@@ -483,6 +484,7 @@ def test_mapper_official_cargos_array_payload() -> None:
             }
         ],
         "TruePrice": 125000,
+        "url": "https://loads.ati.su/cargos/3fa85f64-5717-4562-b3fc-2c963f66afa6",
     }
     raw = AtiCargoMapper().map(payload)
     assert raw.external_id == "3fa85f64-5717-4562-b3fc-2c963f66afa6"
@@ -492,6 +494,7 @@ def test_mapper_official_cargos_array_payload() -> None:
     assert raw.attributes["width"] == "2.45 м"
     assert raw.attributes["height"] == "2.5 м"
     assert raw.attributes["price"] == "125000"
+    assert raw.url == "https://loads.ati.su/cargos/3fa85f64-5717-4562-b3fc-2c963f66afa6"
 
 
 def test_normalizer_real_ati_weight_formats() -> None:
@@ -693,6 +696,77 @@ async def test_source_runtime_stops_ati_polling_when_token_expired() -> None:
     assert any("Токен ATI истёк" in notification.title for notification in sender.sent)
 
 
+async def test_zero_real_ati_cargos_marks_no_market_and_creates_no_cargo_notification() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == BYBOARDS_PATH
+        return httpx.Response(200, json={"loads": []})
+
+    bus = EventBus()
+    sender = _Sender()
+    repository = InMemoryCargoRepository()
+    registry = SourceRegistry(bus)
+    creds = _CredStore({("ref", "api_key"): "not-a-secret"})
+    client = AtiClient(creds, transport=httpx.MockTransport(handler))
+    registry.register(AtiSource(creds, client=client))
+    runtime = SourceRuntime(
+        registry=registry,
+        normalizer=CargoNormalizer(),
+        event_bus=bus,
+        notifications=sender,
+        history=_History(),
+        settings_provider=AppSettings,
+        configurations=_ConfigRepo(
+            SourceConfiguration.create(
+                source_id="ati",
+                name="ATI Live",
+                enabled=True,
+                credentials_reference="ref",
+                filters={"api_mode": "byboards"},
+            )
+        ),
+    )
+    pipeline = RecommendationPipeline(
+        repository=repository,
+        matching=CargoMatchingService(
+            engine=CargoSearchEngine(
+                prefilter=CargoPreFilter(),
+                compatibility=CargoCompatibilityService(BasicCompatibilityChecker()),
+                scorer=CargoScoreCalculator(),
+                ranking=CargoRankingService(),
+            ),
+            repository=repository,
+            event_bus=bus,
+            notifications=sender,
+        ),
+        intelligent=IntelligentMatchingService(
+            preferences=PreferenceEngine(),
+            profit=CargoProfitCalculator(),
+            routes=RouteService(
+                provider=MockRouteProvider(), costs=RouteCostCalculator(), event_bus=bus
+            ),
+            route_score=RouteScoreCalculator(),
+            event_bus=bus,
+            notifications=sender,
+        ),
+        deduplicator=CargoDeduplicationService(),
+        vehicle_provider=mock_vehicle,
+        driver_provider=lambda: DriverProfile.create(home_region="Москва"),
+        location_provider=lambda: "Москва",
+    )
+    pipeline.attach(bus)
+
+    report = await runtime.run_source("ati", trace_id="zero-live")
+    await pipeline.wait_idle()
+
+    assert report.success and report.raw_count == 0 and report.items == ()
+    assert runtime.health("ati").status is SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS
+    assert pipeline.last_report is None
+    assert not any(
+        notification.category in (NotificationCategory.CARGO, NotificationCategory.ROUTE)
+        for notification in sender.sent
+    )
+
+
 # ── Полный конвейер: Mock ATI → Cargo → Matching → Notification ─────────────
 
 
@@ -758,9 +832,14 @@ async def test_full_pipeline_from_mock_ati_to_notification() -> None:
     # уведомление о лучшем грузе — категория ROUTE, деньги посчитаны
     route_notifications = [n for n in sender.sent if n.category is NotificationCategory.ROUTE]
     assert len(route_notifications) == 1
-    body = route_notifications[0].body
+    notification = route_notifications[0]
+    body = notification.body
+    assert notification.title == "🧪 Демо-рекомендация"
+    assert "DEMO · данные не из live ATI" in body
     assert "Москва → Санкт-Петербург" in body and "Чистая прибыль" in body
-    assert route_notifications[0].trace_id == "t-full"
+    assert notification.actions[0].label == "Открыть поиск ATI"
+    assert notification.actions[0].url == "https://loads.ati.su/"
+    assert notification.trace_id == "t-full"
 
     # дашборд получил карточки, лучшая — первой
     assert ranked_batches and ranked_batches[0][0].cargo_match.cargo.id == "ati-spb-120"

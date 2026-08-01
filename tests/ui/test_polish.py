@@ -8,15 +8,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide6.QtCore import QVariantAnimation
+import shiboken6
+from PySide6.QtCore import QPointF, QVariantAnimation
+from PySide6.QtGui import QEnterEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from app.ui.theme import cascade, enter_page, tokens
+from app.ui.theme import AnimationManager, animate_shadow, cascade, enter_page, tokens
 from app.ui.viewmodels import BadgeTone, mock_best_matches
 from app.ui.widgets import (
+    CargoCardWidget,
     Command,
     CommandPalette,
     EmptyState,
+    HoverCard,
     IllustrationBadge,
     Modal,
     ScoreRing,
@@ -158,6 +162,61 @@ def test_sparkline_idempotent_series_and_endpoint(qtbot: Any) -> None:
     chart.hide()
     assert chart._pulse.state() != _RUNNING
     assert not chart.grab().isNull()
+
+
+def test_shadow_deleted_safe(qtbot: Any) -> None:
+    card = HoverCard()
+    qtbot.addWidget(card)
+    card.show()
+    shadow = card._shadow
+    old_effect = shadow.effect
+    card.setGraphicsEffect(None)  # Qt owns and may delete the C++ effect.
+    if old_effect is not None:
+        assert not shiboken6.isValid(old_effect)
+
+    animate_shadow(shadow, tokens.SHADOW_LIFTED, duration_ms=60)
+    qtbot.wait(120)
+
+    assert card.graphicsEffect() is not None
+
+
+def test_hover_cancel_previous_animation(qtbot: Any) -> None:
+    card = HoverCard()
+    qtbot.addWidget(card)
+    card.show()
+
+    first = animate_shadow(card._shadow, tokens.SHADOW_LIFTED, duration_ms=300)
+    second = animate_shadow(card._shadow, tokens.SHADOW_RESTING, duration_ms=300)
+
+    assert first is not None and second is not None and first is not second
+    assert first.state() != _RUNNING
+    assert second.state() == _RUNNING
+
+
+def test_hidden_widget_stops_animation(qtbot: Any) -> None:
+    card = HoverCard()
+    qtbot.addWidget(card)
+    card.show()
+    animate_shadow(card._shadow, tokens.SHADOW_LIFTED, duration_ms=300)
+    assert AnimationManager.instance()._animations.get(card)
+
+    card.hide()
+
+    assert not AnimationManager.instance()._animations.get(card)
+
+
+def test_cargo_card_hover_no_geometry_change(qtbot: Any) -> None:
+    widget = CargoCardWidget(mock_best_matches()[0], on_explain=lambda _: None)
+    qtbot.addWidget(widget)
+    widget.resize(640, widget.sizeHint().height())
+    widget.show()
+    before = widget.geometry()
+
+    event = QEnterEvent(QPointF(1, 1), QPointF(1, 1), QPointF(1, 1))
+    widget.enterEvent(event)
+    qtbot.wait(80)
+
+    assert widget.geometry() == before
 
 
 def test_empty_state_has_illustration(qtbot: Any) -> None:

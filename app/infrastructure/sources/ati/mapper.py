@@ -31,6 +31,7 @@ from app.core.models.sources import (
     ATTR_WIDTH,
     RawCargo,
 )
+from app.infrastructure.sources.ati.url_builder import AtiCargoUrlBuilder
 
 #: Не-контрактные атрибуты (сохраняются для будущих модулей, поиск их не ждёт).
 ATTR_LOADING_DATE = "loading_date"
@@ -43,6 +44,9 @@ _DIMENSIONS = re.compile(
 
 class AtiCargoMapper:
     """Перекладывает поля ответа ATI в атрибуты RawCargo (строки как есть)."""
+
+    def __init__(self, url_builder: AtiCargoUrlBuilder | None = None) -> None:
+        self._url_builder = url_builder if url_builder is not None else AtiCargoUrlBuilder()
 
     def map(self, payload: Mapping[str, Any]) -> RawCargo:
         """Одна карточка груза ATI → RawCargo."""
@@ -131,10 +135,22 @@ class AtiCargoMapper:
             )
             or "Груз ATI"
         )
+        cargo_application_id = self._pick(
+            payload, "cargo_application_id", "CargoApplicationId", "cargo_application.id"
+        )
+        official_url = str(self._pick(payload, "Url", "url", "cargo.url") or "")
+        cargo_url = self._url_builder.build(
+            external_cargo_id=str(external_id) if external_id is not None else "",
+            cargo_application_id=str(cargo_application_id)
+            if cargo_application_id is not None
+            else "",
+            source_metadata=payload,
+            official_url=official_url,
+        )
         return RawCargo(
             external_id=str(external_id) if external_id is not None else "",
             title=str(title),
-            url=str(self._pick(payload, "Url", "url") or ""),
+            url=cargo_url or "",
             attributes=attributes,
             raw=dict(payload),  # raw_metadata: неизвестные поля не теряются
         )

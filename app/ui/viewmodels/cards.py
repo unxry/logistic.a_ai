@@ -79,6 +79,10 @@ def source_status_badge(status: SourceStatus) -> StatusBadge:
     """Здоровье источника → бейдж."""
     mapping = {
         SourceStatus.ONLINE: (BadgeTone.OK, "В сети"),
+        SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS: (
+            BadgeTone.WARNING,
+            "Нет рыночной выдачи",
+        ),
         SourceStatus.DEGRADED: (BadgeTone.WARNING, "Сбоит"),
         SourceStatus.FAILED: (BadgeTone.ERROR, "Недоступен"),
         SourceStatus.DISABLED: (BadgeTone.MUTED, "Выключен"),
@@ -214,13 +218,19 @@ class SourceStatusViewModel:
             reliability_parts.append(f"ошибки {health.error_rate:.0%}")
         if health.duplicate_rate > 0:
             reliability_parts.append(f"дубли {health.duplicate_rate:.0%}")
+        errors = health.last_error if health.last_error is not None else ""
+        if health.status is SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS:
+            errors = (
+                "Рыночная выдача недоступна · "
+                "Как получить доступ: docs/development/live-commissioning.md"
+            )
         return cls(
             id=source_id,
             name=name,
             status=source_status_badge(health.status),
             last_sync=last_sync,
             cargo_count=cargo_count,
-            errors=health.last_error if health.last_error is not None else "",
+            errors=errors,
             consecutive_failures=health.consecutive_failures,
             throughput=throughput,
             reliability=" · ".join(reliability_parts),

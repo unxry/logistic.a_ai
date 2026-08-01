@@ -31,7 +31,7 @@ from app.core.models.matching import (
     MatchingWeights,
     ProfitAnalysis,
 )
-from app.core.models.notification import NotificationCategory
+from app.core.models.notification import NotificationActionType, NotificationCategory
 from app.core.models.notification_builder import NotificationBuilder
 from app.core.models.scoring import freshness_score
 from app.core.models.search import CargoMatch
@@ -181,8 +181,12 @@ class IntelligentMatchingService:
     async def notify_best(self, best: IntelligentCargoMatch, trace_id: str = "") -> None:
         """Уведомить о лучшем грузе (категория ROUTE: экономика рейса)."""
         cargo = best.cargo_match.cargo
+        is_demo = bool(cargo.raw.get("is_demo"))
         route = " → ".join(p for p in (cargo.loading_region, cargo.unloading_region) if p)
-        lines = [route if route else "Маршрут не указан"]
+        lines = []
+        if is_demo:
+            lines.append("DEMO · данные не из live ATI")
+        lines.append(route if route else "Маршрут не указан")
         distance_km = (
             best.route_estimate.distance_km
             if best.route_estimate is not None
@@ -203,12 +207,13 @@ class IntelligentMatchingService:
 
         builder = (
             NotificationBuilder()
-            .title("🚚 Лучший груз найден")
+            .title("🧪 Демо-рекомендация" if is_demo else "🚚 Лучший груз найден")
             .body("\n".join(lines))
             .severity(Severity.SUCCESS)
             .category(NotificationCategory.ROUTE)
             .source(_SOURCE)
             .payload_item("cargo_id", cargo.id)
+            .payload_item("external_id", cargo.id)
             .payload_item("route", route)
             .payload_item("ai_score", str(best.final_score))
             .trace_id(trace_id)
@@ -216,10 +221,20 @@ class IntelligentMatchingService:
         if profit is not None:
             builder.payload_item("profit", str(profit.net_profit))
         if cargo.url:
-            builder.action("Открыть ATI", cargo.url)
+            builder.open_cargo(cargo.url)
+        elif cargo.source_id == "ati":
+            builder.open_ati_search()
         # Callback-кнопки Telegram (id из whitelist бота; cargo_id — в payload).
-        builder.action("Подробнее", action_id="details")
-        builder.action("Игнорировать", action_id="ignore")
+        builder.action(
+            "Подробнее",
+            action_id=NotificationActionType.DETAILS.value,
+            action_type=NotificationActionType.DETAILS,
+        )
+        builder.action(
+            "Игнорировать",
+            action_id=NotificationActionType.IGNORE.value,
+            action_type=NotificationActionType.IGNORE,
+        )
         try:
             await self._notifications.send(builder.build())
         except Exception:

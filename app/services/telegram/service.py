@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from time import perf_counter
+from urllib.parse import urlparse
 
 from app.core.errors import (
     SecretStoreError,
@@ -28,7 +29,7 @@ from app.core.errors import (
 )
 from app.core.events import TelegramStatusChanged
 from app.core.models.connection import ConnectionState
-from app.core.models.notification import DeliveryResult, Notification
+from app.core.models.notification import DeliveryResult, Notification, NotificationActionType
 from app.core.models.telegram import TelegramButton
 from app.core.models.verification import VerificationResult
 from app.core.ports import EventPublisher, NotificationFormatter, TelegramApi, TelegramApiFactory
@@ -38,6 +39,8 @@ from app.services.telegram.rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
 CHANNEL_ID = "telegram"
+_TRUSTED_ATI_HOSTS = frozenset({"ati.su", "www.ati.su", "loads.ati.su"})
+_ATI_SEARCH_URL = "https://loads.ati.su/"
 
 
 def _buttons_from_actions(notification: Notification) -> tuple[TelegramButton, ...]:
@@ -47,17 +50,80 @@ def _buttons_from_actions(notification: Notification) -> tuple[TelegramButton, .
     (details/ignore) требуют валидного cargo_id в payload — иначе кнопка
     не создаётся (callback_data всегда проходит валидацию формата).
     """
-    cargo_id = str(notification.payload.get("cargo_id", ""))
+    cargo_id = str(
+        notification.payload.get("external_id")
+        or notification.payload.get("cargo_external_id")
+        or notification.payload.get("cargo_id", "")
+    )
     cargo_id_ok = bool(CALLBACK_PAYLOAD_PATTERN.fullmatch(cargo_id))
     buttons: list[TelegramButton] = []
     for action in notification.actions:
-        if action.url:
-            buttons.append(TelegramButton(text=action.label, url=action.url))
-        elif action.id in CALLBACK_ACTIONS and cargo_id_ok:
+        if action.action_type is NotificationActionType.OPEN_CARGO:
+            if _is_cargo_specific_ati_url(action.url, cargo_id):
+                buttons.append(TelegramButton(text="Открыть ATI", url=action.url))
+        elif action.action_type is NotificationActionType.OPEN_ATI_SEARCH:
+            if _is_ati_search_url(action.url):
+                buttons.append(TelegramButton(text="Открыть поиск ATI", url=_ATI_SEARCH_URL))
+        elif (
+            (
+                action.action_type
+                in (
+                    NotificationActionType.DETAILS,
+                    NotificationActionType.IGNORE,
+                    NotificationActionType.FAVORITE,
+                )
+                or action.action_type is NotificationActionType.CUSTOM
+            )
+            and not action.url
+            and action.id in CALLBACK_ACTIONS
+            and cargo_id_ok
+        ):
             buttons.append(
                 TelegramButton(text=action.label, callback_data=f"{action.id}:{cargo_id}")
             )
+        elif action.action_type is NotificationActionType.CUSTOM and action.url:
+            buttons.append(TelegramButton(text=action.label, url=action.url))
     return tuple(buttons)
+
+
+def _is_trusted_ati_url(url: str) -> bool:
+    parsed = urlparse(url.strip())
+    return parsed.scheme == "https" and parsed.netloc.lower() in _TRUSTED_ATI_HOSTS
+
+
+def _is_ati_search_url(url: str) -> bool:
+    parsed = urlparse(url.strip())
+    return (
+        _is_trusted_ati_url(url)
+        and parsed.netloc.lower() == "loads.ati.su"
+        and parsed.path
+        in (
+            "",
+            "/",
+        )
+    )
+
+
+def _is_cargo_specific_ati_url(url: str, cargo_id: str) -> bool:
+    if not url.strip() or not _is_trusted_ati_url(url) or _is_ati_search_url(url):
+        return False
+    parsed = urlparse(url.strip())
+    haystack = f"{parsed.path}?{parsed.query}".lower()
+    identifiers = _identifier_candidates(cargo_id)
+    if identifiers:
+        return any(identifier.lower() in haystack for identifier in identifiers)
+    return any(char.isdigit() for char in haystack)
+
+
+def _identifier_candidates(identifier: str) -> tuple[str, ...]:
+    value = identifier.strip()
+    if not value:
+        return ()
+    parts = [value]
+    digits = "".join(char for char in value if char.isdigit())
+    if digits and digits != value:
+        parts.append(digits)
+    return tuple(dict.fromkeys(parts))
 
 
 _HINT_CHAT_NOT_FOUND = (

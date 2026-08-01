@@ -64,3 +64,11 @@ def test_formatter_test_message() -> None:
     text = TelegramNotificationFormatter().format_test_message()
     assert "LogistAI" in text
     assert "<b>" in text  # HTML-разметка на месте
+
+
+def test_production_formatter_never_contains_split_test_text() -> None:
+    text = TelegramNotificationFormatter().format(
+        Notification.create("Проверка", "Telegram подключён", Severity.INFO)
+    )
+
+    assert "Проверка split" not in text

@@ -220,6 +220,17 @@ def test_source_status_from_health() -> None:
     )
     assert disabled.status.tone is BadgeTone.MUTED
 
+    no_market = SourceStatusViewModel.from_health(
+        "ati",
+        "ATI.SU",
+        SourceHealth(status=SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS),
+        cargo_count=0,
+        now=now,
+    )
+    assert no_market.status.tone is BadgeTone.WARNING
+    assert no_market.status.label == "Нет рыночной выдачи"
+    assert "Как получить доступ" in no_market.errors
+
 
 def test_analytics_viewmodel_build_and_empty() -> None:
     stats = MatchingAnalytics(

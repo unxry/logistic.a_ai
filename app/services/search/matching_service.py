@@ -134,7 +134,9 @@ class CargoMatchingService:
             .trace_id(trace_id)
         )
         if cargo.url:
-            builder.action("Открыть", cargo.url)
+            builder.open_cargo(cargo.url)
+        elif cargo.source_id == "ati":
+            builder.open_ati_search()
         try:
             await self._notifications.send(builder.build())
         except Exception:

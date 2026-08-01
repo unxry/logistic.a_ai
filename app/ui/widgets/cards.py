@@ -10,11 +10,12 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QEnterEvent, QMouseEvent, QPainter, QPaintEvent
-from PySide6.QtWidgets import QFrame, QLabel, QVBoxLayout, QWidget
+from PySide6.QtGui import QColor, QEnterEvent, QHideEvent, QMouseEvent, QPainter, QPaintEvent
+from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QLabel, QVBoxLayout, QWidget
 
 from app.ui.theme import animate_shadow, apply_shadow, count_up
 from app.ui.theme import tokens as t
+from app.ui.theme.animation_manager import AnimationManager
 from app.ui.widgets.atoms import Button, ButtonKind, SectionLabel
 from app.ui.widgets.charts import Sparkline
 
@@ -54,7 +55,10 @@ class HoverCard(GlassCard):
 
     def reveal_on_hover(self, widget: QWidget) -> None:
         """Зарегистрировать виджет, появляющийся только при наведении."""
-        widget.setVisible(False)
+        widget.setVisible(True)
+        effect = QGraphicsOpacityEffect(widget)
+        effect.setOpacity(0.0)
+        widget.setGraphicsEffect(effect)
         self._hover_targets.append(widget)
 
     def enterEvent(self, event: QEnterEvent) -> None:  # noqa: N802 (Qt API)
@@ -62,18 +66,20 @@ class HoverCard(GlassCard):
         super().enterEvent(event)
         self._hovered = True
         animate_shadow(self._shadow, t.SHADOW_LIFTED)
+        AnimationManager.instance().animate_scale(self, start=1.0, end=1.025)
         self._set_surface(background=t.CARD_HOVER, border="rgba(10, 132, 255, 0.35)")
         for widget in self._hover_targets:
-            widget.setVisible(True)
+            AnimationManager.instance().animate_opacity(widget, start=0.0, end=1.0)
 
     def leaveEvent(self, event: object) -> None:  # noqa: N802 (Qt API)
         """Возврат в покой."""
         super().leaveEvent(event)  # type: ignore[arg-type]
         self._hovered = False
         animate_shadow(self._shadow, t.SHADOW_RESTING)
+        AnimationManager.instance().animate_scale(self, start=1.025, end=1.0)
         self._set_surface(background=t.CARD, border=t.BORDER)
         for widget in self._hover_targets:
-            widget.setVisible(False)
+            AnimationManager.instance().animate_opacity(widget, start=1.0, end=0.0)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt API)
         """Нажатие прижимает карточку: тень ACTIVE (быстро)."""
@@ -85,6 +91,20 @@ class HoverCard(GlassCard):
         super().mouseReleaseEvent(event)
         target = t.SHADOW_LIFTED if self._hovered else t.SHADOW_RESTING
         animate_shadow(self._shadow, target, t.DURATION_FAST)
+
+    def hideEvent(self, event: QHideEvent) -> None:  # noqa: N802 (Qt API)
+        """Hidden cards must not keep hover/shadow animations alive."""
+        AnimationManager.instance().stop(self)
+        for widget in self._hover_targets:
+            AnimationManager.instance().stop(widget)
+        super().hideEvent(event)
+
+    def closeEvent(self, event: object) -> None:  # noqa: N802 (Qt API)
+        """Release animation references before Qt destroys child effects."""
+        AnimationManager.instance().stop(self)
+        for widget in self._hover_targets:
+            AnimationManager.instance().stop(widget)
+        super().closeEvent(event)  # type: ignore[arg-type]
 
 
 class MetricCard(HoverCard):

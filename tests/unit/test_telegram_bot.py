@@ -14,6 +14,7 @@ from app.core.models.matching import MatchingWeights
 from app.core.models.notification import (
     Notification,
     NotificationAction,
+    NotificationActionType,
     NotificationCategory,
 )
 from app.core.models.severity import Severity
@@ -336,6 +337,66 @@ def test_buttons_skip_unknown_action_ids() -> None:
     assert _buttons_from_actions(notification) == ()
 
 
+def test_open_cargo_without_url_does_not_create_button() -> None:
+    notification = _cargo_notification(
+        (
+            NotificationAction(
+                id="open_cargo",
+                label="Открыть ATI",
+                action_type=NotificationActionType.OPEN_CARGO,
+            ),
+        ),
+        cargo_id="12345",
+    )
+    assert _buttons_from_actions(notification) == ()
+
+
+def test_open_cargo_rejects_general_search_url() -> None:
+    notification = _cargo_notification(
+        (
+            NotificationAction(
+                id="open_cargo",
+                label="Открыть ATI",
+                url="https://loads.ati.su/",
+                action_type=NotificationActionType.OPEN_CARGO,
+            ),
+        ),
+        cargo_id="12345",
+    )
+    assert _buttons_from_actions(notification) == ()
+
+
+def test_open_ati_search_has_correct_label() -> None:
+    notification = _cargo_notification(
+        (
+            NotificationAction(
+                id="open_ati_search",
+                label="wrong label",
+                url="https://loads.ati.su/",
+                action_type=NotificationActionType.OPEN_ATI_SEARCH,
+            ),
+        ),
+        cargo_id="12345",
+    )
+    buttons = _buttons_from_actions(notification)
+    assert buttons == (TelegramButton(text="Открыть поиск ATI", url="https://loads.ati.su/"),)
+
+
+def test_open_cargo_rejects_malicious_url() -> None:
+    notification = _cargo_notification(
+        (
+            NotificationAction(
+                id="open_cargo",
+                label="Открыть ATI",
+                url="javascript:alert(1)",
+                action_type=NotificationActionType.OPEN_CARGO,
+            ),
+        ),
+        cargo_id="12345",
+    )
+    assert _buttons_from_actions(notification) == ()
+
+
 # ── Форматтер: категорные шаблоны ────────────────────────────────────────────
 
 
@@ -387,7 +448,11 @@ _NOW = datetime(2026, 7, 31, 12, 0, tzinfo=UTC)
 def test_status_reply_contains_all_fields() -> None:
     text = bot_replies.build_status_reply(
         source_name="ATI.SU",
-        health=SourceHealth(status=SourceStatus.ONLINE, last_success=_NOW),
+        health=SourceHealth(
+            status=SourceStatus.ONLINE,
+            last_success=_NOW,
+            last_received_count=542,
+        ),
         found_count=542,
         last_search_at=_NOW,
         best_route="Москва → Санкт-Петербург",
@@ -395,11 +460,35 @@ def test_status_reply_contains_all_fields() -> None:
         scheduler_running=True,
         version="0.1.0-alpha",
     )
-    assert "🟢 <b>Online</b>" in text
+    assert "Authentication: <b>✅</b>" in text
+    assert "Market access: <b>✅</b>" in text
+    assert "Cargo received: <b>542</b>" in text
     assert "Найдено грузов: <b>542</b>" in text
     assert "Москва → Санкт-Петербург" in text and "AI 92" in text
-    assert "Scheduler: <b>работает</b>" in text
+    assert "Scheduler: <b>✅</b>" in text
     assert "0.1.0-alpha" in text
+
+
+def test_status_reply_separates_authentication_and_market_access() -> None:
+    text = bot_replies.build_status_reply(
+        source_name="ATI.SU",
+        health=SourceHealth(
+            status=SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS,
+            last_success=_NOW,
+            last_received_count=0,
+        ),
+        found_count=0,
+        last_search_at=_NOW,
+        best_route="",
+        best_score=0,
+        scheduler_running=True,
+        version="0.1.0-alpha",
+    )
+    assert "Authentication: <b>✅</b>" in text
+    assert "Market access: <b>❌</b>" in text
+    assert "Available boards: <b>0</b>" in text
+    assert "Cargo received: <b>0</b>" in text
+    assert "authenticated_no_market_access" in text
 
 
 def test_status_reply_offline_marker() -> None:
@@ -413,7 +502,9 @@ def test_status_reply_offline_marker() -> None:
         scheduler_running=False,
         version="0.1.0",
     )
-    assert "🔴" in text and "ещё не было" in text and "остановлен" in text
+    assert "Authentication: <b>❌</b>" in text
+    assert "ещё не было" in text
+    assert "Scheduler: <b>❌</b>" in text
 
 
 def test_report_reply_matches_stage8_analytics() -> None:
@@ -466,6 +557,15 @@ def test_search_replies_cover_outcomes() -> None:
     assert "продолжаю следить" in empty
     failed = bot_replies.build_search_failed_reply("ATI HTTP 503")
     assert failed.startswith("🚨") and "ATI HTTP 503" in failed
+
+
+def test_search_no_market_access_reply_is_honest() -> None:
+    text = bot_replies.build_no_market_access_reply(available_boards=0, received=0)
+    assert "ATI API подключён" in text
+    assert "доступ к рыночной выдаче отсутствует" in text
+    assert "Доступные площадки: <b>0</b>" in text
+    assert "Получено грузов: <b>0</b>" in text
+    assert "85 000" not in text and "AI Score" not in text and "96" not in text
 
 
 def test_help_and_unknown_replies_list_commands() -> None:

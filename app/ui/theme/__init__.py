@@ -1,6 +1,8 @@
 """Тема LogistAI: токены дизайн-системы, глобальный QSS, motion-паттерны."""
 
 from app.ui.theme import tokens
+from app.ui.theme.animation_manager import AnimationManager
+from app.ui.theme.effects import SafeGraphicsEffect, SafeShadow
 from app.ui.theme.motion import (
     animate_shadow,
     apply_shadow,
@@ -15,6 +17,9 @@ from app.ui.theme.motion import (
 from app.ui.theme.qss import build_global_qss
 
 __all__ = [
+    "AnimationManager",
+    "SafeGraphicsEffect",
+    "SafeShadow",
     "animate_shadow",
     "apply_shadow",
     "breathing",

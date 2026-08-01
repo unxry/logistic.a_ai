@@ -250,7 +250,8 @@ class SourceRuntime:
         was_failed = self._health.get(spec.id, SourceHealth(status=SourceStatus.DISABLED)).status
         items, warnings = self._normalize_all(result, spec.id)
         self._record_run(spec.id, success=True, duration_ms=duration_ms, items=len(items))
-        self._refresh_health(spec.id, last_error=None)
+        no_market_access = spec.id == "ati" and len(items) == 0 and len(result.raw_items) == 0
+        self._refresh_health(spec.id, last_error=None, no_market_access=no_market_access)
         if was_failed is SourceStatus.FAILED:
             # Источник ожил: сообщаем и сбрасываем cooldown — следующая
             # авария уведомит немедленно, а не после окна.
@@ -391,10 +392,14 @@ class SourceRuntime:
             self._last_error_at[source_id] = now
             self._consecutive_failures[source_id] = self._consecutive_failures.get(source_id, 0) + 1
 
-    def _refresh_health(self, source_id: str, *, last_error: str | None) -> None:
+    def _refresh_health(
+        self, source_id: str, *, last_error: str | None, no_market_access: bool = False
+    ) -> None:
         metrics = self._metrics.get(source_id, SourceMetrics())
         if last_error is not None:
             status = SourceStatus.FAILED
+        elif no_market_access:
+            status = SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS
         elif metrics.success_rate < _DEGRADED_BELOW:
             status = SourceStatus.DEGRADED
         else:

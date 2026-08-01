@@ -23,6 +23,7 @@ _DEMO_TOKEN = "demo-token-not-a-secret"
 
 _PAGE_1: list[dict[str, Any]] = [
     {
+        "is_demo": True,
         "id": "ati-spb-120",
         "cargo": {
             "name": "Паллеты с бытовой техникой",
@@ -38,6 +39,7 @@ _PAGE_1: list[dict[str, Any]] = [
         "url": "https://ati.su/cargo/demo-spb",
     },
     {
+        "is_demo": True,
         "id": "ati-kazan-90",
         "cargo": {
             "name": "Мебель",
@@ -53,6 +55,7 @@ _PAGE_1: list[dict[str, Any]] = [
         "url": "https://ati.su/cargo/demo-kazan",
     },
     {
+        "is_demo": True,
         "id": "ati-tver-35",
         "cargo": {"name": "Стройматериалы", "weight": "2400 кг"},
         "loading": {"city_name": "Москва"},
@@ -63,6 +66,7 @@ _PAGE_1: list[dict[str, Any]] = [
         "url": "https://ati.su/cargo/demo-tver",
     },
     {
+        "is_demo": True,
         # Перегруз для MAN TGL (6 т): движок честно отсеет по совместимости.
         "id": "ati-heavy-200",
         "cargo": {"name": "Оборудование", "weight": "20 тонн"},
@@ -79,6 +83,7 @@ _PAGE_1.append(dict(_PAGE_1[0]))
 # Страница 2: один новый груз + ДУБЛЬ лучшего (ATI отдаёт грузы повторно).
 _PAGE_2: list[dict[str, Any]] = [
     {
+        "is_demo": True,
         "id": "ati-nn-60",
         "cargo": {"name": "Продукты питания", "weight": "4 т", "sizes": "4.5x2.0x2.0"},
         "loading": {"city_name": "Москва"},

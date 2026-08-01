@@ -675,7 +675,16 @@ def _build_telegram_bot(
             return bot_replies.build_search_failed_reply(job_result.error or "источник не ответил")
         report = pipeline.last_report
         if report is None:
+            health = source_runtime.health("ati")
+            if health.status.value == "authenticated_no_market_access":
+                return bot_replies.build_no_market_access_reply(
+                    available_boards=0,
+                    received=health.last_received_count,
+                )
             return bot_replies.build_search_failed_reply("источник не вернул данных")
+        health = source_runtime.health("ati")
+        if report.received == 0 and health.status.value == "authenticated_no_market_access":
+            return bot_replies.build_no_market_access_reply(available_boards=0, received=0)
         return bot_replies.build_search_result_reply(
             received=report.received,
             new_count=report.new_count + report.updated_count,

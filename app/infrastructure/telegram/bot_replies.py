@@ -63,22 +63,30 @@ def build_status_reply(
     version: str,
 ) -> str:
     """/status — состояние платформы одним сообщением."""
-    online = health.status is SourceStatus.ONLINE
+    authenticated = health.status in (
+        SourceStatus.ONLINE,
+        SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS,
+        SourceStatus.DEGRADED,
+    )
+    market_access = health.status is SourceStatus.ONLINE and health.last_received_count > 0
+    boards = "0" if health.status is SourceStatus.AUTHENTICATED_NO_MARKET_ACCESS else "unknown"
     builder = (
         TelegramMessageBuilder()
         .title("📡", "Статус LogistAI")
         .separator()
-        .raw_html(
-            f"{escape_html(source_name)}: "
-            + ("🟢 <b>Online</b>" if online else f"🔴 <b>{escape_html(health.status.value)}</b>")
-        )
+        .key_value("Authentication", "✅" if authenticated else "❌")
+        .key_value("Market access", "✅" if market_access else "❌")
+        .key_value("Available boards", boards)
+        .key_value("Cargo received", str(health.last_received_count))
+        .key_value("Telegram", "✅")
+        .key_value("Scheduler", "✅" if scheduler_running else "❌")
+        .raw_html(f"{escape_html(source_name)}: <b>{escape_html(health.status.value)}</b>")
         .key_value("Последняя синхронизация", _time_label(health.last_success))
         .key_value("Последний поиск", _time_label(last_search_at))
         .key_value("Найдено грузов", str(found_count))
     )
     if best_route:
         builder.raw_html(f"Лучший груз: <b>{escape_html(best_route)}</b> · AI {best_score}")
-    builder.key_value("Scheduler", "работает" if scheduler_running else "остановлен")
     builder.key_value("Версия", version)
     return builder.build()
 
@@ -181,6 +189,23 @@ def build_search_result_reply(
     else:
         builder.line().line("Новых подходящих грузов нет — продолжаю следить.")
     return builder.build()
+
+
+def build_no_market_access_reply(*, available_boards: int, received: int) -> str:
+    """/search — ATI доступен, но рыночной выдачи нет."""
+    return (
+        TelegramMessageBuilder()
+        .title("⚠️", "ATI API подключён, но доступ к рыночной выдаче отсутствует")
+        .separator()
+        .key_value("Доступные площадки", str(available_boards))
+        .key_value("Получено грузов", str(received))
+        .line()
+        .line(
+            "Нужен доступ к персональной площадке ATI, тариф/API-scope "
+            "или иной официальный endpoint."
+        )
+        .build()
+    )
 
 
 def build_search_failed_reply(error: str) -> str:

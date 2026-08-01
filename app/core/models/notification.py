@@ -32,6 +32,17 @@ class NotificationCategory(Enum):
     AI = "ai"
 
 
+class NotificationActionType(Enum):
+    """Семантика действия уведомления, отдельно от подписи кнопки."""
+
+    OPEN_CARGO = "open_cargo"
+    OPEN_ATI_SEARCH = "open_ati_search"
+    DETAILS = "details"
+    IGNORE = "ignore"
+    FAVORITE = "favorite"
+    CUSTOM = "custom"
+
+
 @dataclass(frozen=True, slots=True)
 class NotificationAction:
     """Действие уведомления («Открыть ATI», «Позвонить», «Скрыть»).
@@ -42,6 +53,7 @@ class NotificationAction:
     id: str
     label: str
     url: str = ""
+    action_type: NotificationActionType = NotificationActionType.CUSTOM
 
 
 @dataclass(frozen=True, slots=True)

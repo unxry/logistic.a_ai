@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.theme import tokens as t
+from app.ui.theme.effects import SafeShadow
 
 _ENTRANCE_ANIMATION_PROPERTY = "_logistai_entrance_animation"
 
@@ -40,22 +41,21 @@ def _restart_entrance(widget: QWidget, animation: QVariantAnimation) -> None:
     widget.setProperty(_ENTRANCE_ANIMATION_PROPERTY, animation)
 
 
-def apply_shadow(widget: QWidget, spec: t.ShadowSpec) -> QGraphicsDropShadowEffect:
+def apply_shadow(widget: QWidget, spec: t.ShadowSpec) -> SafeShadow:
     """Повесить теневой эффект уровня дизайн-системы."""
-    shadow = QGraphicsDropShadowEffect(widget)
-    shadow.setBlurRadius(spec.blur)
-    shadow.setOffset(0, spec.y_offset)
-    shadow.setColor(QColor(*spec.rgba))
-    widget.setGraphicsEffect(shadow)
-    return shadow
+    return SafeShadow(widget, spec)
 
 
 def animate_shadow(
-    shadow: QGraphicsDropShadowEffect,
+    shadow: SafeShadow | QGraphicsDropShadowEffect,
     target: t.ShadowSpec,
     duration_ms: int = t.DURATION_BASE,
-) -> QVariantAnimation:
+) -> QVariantAnimation | None:
     """Плавный переход тени между уровнями (паттерн lift)."""
+    if isinstance(shadow, SafeShadow):
+        return shadow.animate(target, duration_ms)
+    if not shiboken6.isValid(shadow):
+        return None
     start_blur = shadow.blurRadius()
     start_y = shadow.yOffset()
     start_color = shadow.color()

@@ -13,6 +13,7 @@ from uuid import uuid4
 from app.core.models.notification import (
     Notification,
     NotificationAction,
+    NotificationActionType,
     NotificationCategory,
     NotificationContext,
 )
@@ -60,16 +61,41 @@ class NotificationBuilder:
         self._channels.append(channel_id)
         return self
 
-    def action(self, label: str, url: str = "", action_id: str | None = None) -> Self:
+    def action(
+        self,
+        label: str,
+        url: str = "",
+        action_id: str | None = None,
+        action_type: NotificationActionType = NotificationActionType.CUSTOM,
+    ) -> Self:
         """Добавить действие-кнопку."""
         self._actions.append(
             NotificationAction(
                 id=action_id if action_id is not None else uuid4().hex,
                 label=label,
                 url=url,
+                action_type=action_type,
             )
         )
         return self
+
+    def open_cargo(self, url: str) -> Self:
+        """Открыть конкретную карточку груза ATI (только cargo-specific URL)."""
+        return self.action(
+            "Открыть ATI",
+            url,
+            action_id=NotificationActionType.OPEN_CARGO.value,
+            action_type=NotificationActionType.OPEN_CARGO,
+        )
+
+    def open_ati_search(self, url: str = "https://loads.ati.su/") -> Self:
+        """Открыть общий поиск ATI; это НЕ ссылка на конкретный груз."""
+        return self.action(
+            "Открыть поиск ATI",
+            url,
+            action_id=NotificationActionType.OPEN_ATI_SEARCH.value,
+            action_type=NotificationActionType.OPEN_ATI_SEARCH,
+        )
 
     def payload_item(self, key: str, value: str) -> Self:
         """Добавить ссылку на сущность (cargo_id, company_id, …)."""
