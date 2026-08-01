@@ -70,6 +70,11 @@ class AnimationManager:
         if not entries:
             self._animations.pop(owner, None)
 
+    def stop_all(self) -> None:
+        """Stop every tracked animation, used by application shutdown."""
+        for owner in tuple(self._animations):
+            self.stop(owner)
+
     def animate_property(
         self,
         *,

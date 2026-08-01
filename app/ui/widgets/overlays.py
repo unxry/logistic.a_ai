@@ -111,22 +111,31 @@ class Modal(Overlay):
         super().__init__(parent)
         self._panel = QFrame(self)
         self._panel.setObjectName("ModalPanel")
-        self._panel.setStyleSheet(
-            f"QFrame#ModalPanel {{ background: {t.CARD_SOLID};"
-            f" border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_HERO}px; }}"
-        )
+        self.refresh_theme()
         apply_shadow(self._panel, t.SHADOW_LIFTED)
         self._layout = QVBoxLayout(self._panel)
         margin = t.SPACE_XXL + t.SPACE_XS
         self._layout.setContentsMargins(margin, margin, margin, margin)
         self._layout.setSpacing(t.SPACE_L)
         self._title = QLabel("")
-        self._title.setStyleSheet(
-            f"QLabel {{ font-size: {t.TITLE_PT - 2}pt; font-weight: 700;"
-            f" letter-spacing: -0.2px; background: transparent; }}"
-        )
+        self._apply_title_qss()
         self._layout.addWidget(self._title)
         self._content: QWidget | None = None
+
+    def refresh_theme(self) -> None:
+        """Refresh macOS sheet surface after live theme switching."""
+        self._panel.setStyleSheet(
+            f"QFrame#ModalPanel {{ background: {t.CARD_SOLID};"
+            f" border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_HERO}px; }}"
+        )
+        if hasattr(self, "_title"):
+            self._apply_title_qss()
+
+    def _apply_title_qss(self) -> None:
+        self._title.setStyleSheet(
+            f"QLabel {{ font-size: {t.TITLE_PT - 2}pt; font-weight: 700;"
+            f" color: {t.TEXT}; letter-spacing: -0.2px; background: transparent; }}"
+        )
 
     def show_content(self, title: str, content: QWidget) -> None:
         """Открыть sheet с новым содержимым."""
@@ -150,8 +159,9 @@ class Modal(Overlay):
         self._panel.move(x, y)
 
     def _panel_position(self) -> tuple[int, int]:
-        width = min(560, self.width() - t.SPACE_XXL * 2)
-        self._panel.setFixedWidth(max(340, width))
+        available = self.width() - t.SPACE_XXL * 2
+        width = min(860, available)
+        self._panel.setFixedWidth(max(340, min(width, max(680, available))))
         self._panel.adjustSize()
         x = (self.width() - self._panel.width()) // 2
         y = max(t.SPACE_XXL * 2, self.height() // 9)
@@ -315,10 +325,7 @@ class CommandPalette(Overlay):
 
         self._panel = QFrame(self)
         self._panel.setObjectName("PalettePanel")
-        self._panel.setStyleSheet(
-            f"QFrame#PalettePanel {{ background: {t.CARD_SOLID};"
-            f" border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CARD}px; }}"
-        )
+        self._apply_panel_qss()
         apply_shadow(self._panel, t.SHADOW_LIFTED)
         panel_layout = QVBoxLayout(self._panel)
         panel_layout.setContentsMargins(t.SPACE_S, t.SPACE_S, t.SPACE_S, t.SPACE_S)
@@ -326,36 +333,55 @@ class CommandPalette(Overlay):
 
         self._search = QLineEdit(self._panel)
         self._search.setPlaceholderText("Что сделать? Например: «найти груз»")
+        self._apply_search_qss()
+        self._search.textChanged.connect(self._refilter)
+        panel_layout.addWidget(self._search)
+
+        self._separator = QFrame(self._panel)
+        self._separator.setFixedHeight(1)
+        self._separator.setStyleSheet(f"QFrame {{ background: {t.BORDER}; border: none; }}")
+        panel_layout.addWidget(self._separator)
+
+        self._list = QListWidget(self._panel)
+        self._apply_list_qss()
+        self._list.itemActivated.connect(self._run_item)
+        reveal_scrollbar_on_scroll(self._list)
+        panel_layout.addWidget(self._list)
+
+    def refresh_theme(self) -> None:
+        """Refresh palette surface/list after live theme switching."""
+        self._apply_panel_qss()
+        self._apply_search_qss()
+        self._separator.setStyleSheet(f"QFrame {{ background: {t.BORDER}; border: none; }}")
+        self._apply_list_qss()
+
+    def _apply_panel_qss(self) -> None:
+        self._panel.setStyleSheet(
+            f"QFrame#PalettePanel {{ background: {t.CARD_SOLID};"
+            f" border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CARD}px; }}"
+        )
+
+    def _apply_search_qss(self) -> None:
         self._search.setStyleSheet(
             f"""
             QLineEdit {{
-                background: transparent; border: none;
+                background: transparent; border: none; color: {t.TEXT};
                 font-size: {t.HEADLINE_PT}pt; padding: 10px 12px 12px 12px;
                 selection-background-color: {t.tint(t.BLUE, 0.25)};
             }}
             QLineEdit:focus {{ border: none; padding: 10px 12px 12px 12px; }}
             """
         )
-        self._search.textChanged.connect(self._refilter)
-        panel_layout.addWidget(self._search)
 
-        separator = QFrame(self._panel)
-        separator.setFixedHeight(1)
-        separator.setStyleSheet(f"QFrame {{ background: {t.BORDER}; border: none; }}")
-        panel_layout.addWidget(separator)
-
-        self._list = QListWidget(self._panel)
+    def _apply_list_qss(self) -> None:
         self._list.setStyleSheet(
             f"""
-            QListWidget {{ background: transparent; border: none; outline: none; }}
+            QListWidget {{ background: transparent; border: none; outline: none; color: {t.TEXT}; }}
             QListWidget::item {{ border-radius: {t.RADIUS_CONTROL}px; }}
             QListWidget::item:hover {{ background: {t.tint(t.MUTED, 0.08)}; }}
             QListWidget::item:selected {{ background: {t.tint(t.BLUE, 0.12)}; }}
             """
         )
-        self._list.itemActivated.connect(self._run_item)
-        reveal_scrollbar_on_scroll(self._list)
-        panel_layout.addWidget(self._list)
 
     def set_commands(self, commands: Sequence[Command]) -> None:
         """Зарегистрировать доступные команды."""

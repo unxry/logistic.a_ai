@@ -9,5 +9,6 @@ dist/
 build/
 *.egg-info/
 logs/*.log
+artifacts/ui-audit/
 .DS_Store
 .env

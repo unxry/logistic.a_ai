@@ -116,10 +116,7 @@ def tint(color: str, alpha: float = 0.12) -> str:
 
 # ── Типографика ───────────────────────────────────────────────────────────────
 
-FONT_STACK = (
-    '".AppleSystemUIFont", "SF Pro Text", "SF Pro Display", "Helvetica Neue", '
-    '"Inter", "Segoe UI", "Noto Sans", sans-serif'
-)
+FONT_STACK = '".AppleSystemUIFont", "Helvetica Neue", "Arial", sans-serif'
 
 DISPLAY_PT = 30
 TITLE_PT = 21

@@ -59,7 +59,7 @@ QLineEdit {{
     padding: 8px 12px;
     selection-background-color: {t.tint(t.BLUE, 0.25)};
 }}
-QLineEdit:focus {{ border: 2px solid {t.BLUE}; padding: 7px 11px; }}
+QLineEdit:focus {{ border: 1px solid {t.BLUE}; padding: 8px 12px; }}
 
 QToolTip {{
     background: {t.CARD_SOLID};

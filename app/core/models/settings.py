@@ -22,6 +22,7 @@ class Theme(Enum):
 
     DARK = "dark"
     LIGHT = "light"
+    SYSTEM = "system"
 
 
 @dataclass(frozen=True, slots=True)

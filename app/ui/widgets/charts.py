@@ -203,6 +203,14 @@ class ScoreRing(QWidget):
             self.update()
         self._sync_pulse()
 
+    def refresh_theme(self) -> None:
+        """Refresh number color after live theme switching."""
+        self._number.setStyleSheet(
+            f"QLabel {{ font-size: {t.DISPLAY_PT - 8}pt; font-weight: 700;"
+            f" color: {t.TEXT}; background: transparent; }}"
+        )
+        self.update()
+
     def showEvent(self, event: object) -> None:  # noqa: N802 (Qt API)
         """Пульс конечной точки — только на экране."""
         super().showEvent(event)  # type: ignore[arg-type]

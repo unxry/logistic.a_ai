@@ -63,7 +63,7 @@ QPushButton {{
     padding: 0 12px; text-align: left; color: {t.TEXT_SECONDARY};
     font-size: {t.BODY_PT}pt; font-weight: 500;
 }}
-QPushButton:hover {{ background: {hover_bg}; padding-left: 15px; color: {t.TEXT}; }}
+QPushButton:hover {{ background: {hover_bg}; padding: 0 12px; color: {t.TEXT}; }}
 QPushButton:checked {{ background: transparent; color: {t.BLUE}; font-weight: 600; }}
 """
 
@@ -96,21 +96,9 @@ class Sidebar(QFrame):
         super().__init__(parent)
         self.setObjectName("Sidebar")
         self.setFixedWidth(t.SIDEBAR_WIDTH)
-        glow = (
-            "rgba(255, 255, 255, 0.07)"
-            if t.CURRENT_THEME == "dark"
-            else "rgba(255, 255, 255, 0.85)"
-        )
-        self.setStyleSheet(
-            f"""
-QFrame#Sidebar {{
-    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
-        stop: 0 {t.SIDEBAR_TOP}, stop: 1 {t.SIDEBAR_BOTTOM});
-    border-right: 1px solid {t.BORDER};
-    border-top: 1px solid {glow};
-}}
-"""
-        )
+        self._ai_tone = BadgeTone.MUTED
+        self._link_tones = (BadgeTone.MUTED, BadgeTone.MUTED, BadgeTone.MUTED)
+        self._apply_frame_qss()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(t.SPACE_M, t.SPACE_L, t.SPACE_M, t.SPACE_M)
@@ -126,10 +114,7 @@ QFrame#Sidebar {{
         nav_layout.setContentsMargins(0, 0, 0, 0)
         nav_layout.setSpacing(t.SPACE_XS)
         self._capsule = QFrame(self._nav_host)
-        self._capsule.setStyleSheet(
-            f"QFrame {{ background: {t.tint(t.BLUE, 0.14)};"
-            f" border: 1px solid {t.tint(t.BLUE, 0.22)}; border-radius: 9px; }}"
-        )
+        self._apply_capsule_qss()
         self._capsule.hide()
         self._capsule_animation: QVariantAnimation | None = None
 
@@ -149,7 +134,8 @@ QFrame#Sidebar {{
         layout.addWidget(self._nav_host)
 
         layout.addStretch(1)
-        layout.addWidget(self._footer(version_line))
+        self._footer_widget = self._footer(version_line)
+        layout.addWidget(self._footer_widget)
 
         self._active_id = ""
         self.select("dashboard")
@@ -171,6 +157,7 @@ QFrame#Sidebar {{
 
     def set_ai_tone(self, tone: BadgeTone) -> None:
         """Обновить статус-пилюлю приложения (🟢 Online / AI ACTIVE)."""
+        self._ai_tone = tone
         self._pill_indicator.set_tone(tone)
         self._pill_label.setText(_PILL_TEXT.get(tone, "Ожидание"))
         color = t.tone_color(tone)
@@ -181,6 +168,7 @@ QFrame#Sidebar {{
 
     def set_link_tones(self, telegram: BadgeTone, ati: BadgeTone, scheduler: BadgeTone) -> None:
         """Обновить бейджи связей в футере."""
+        self._link_tones = (telegram, ati, scheduler)
         self._badge_telegram.set_tone(telegram)
         self._badge_ati.set_tone(ati)
         self._badge_scheduler.set_tone(scheduler)
@@ -188,6 +176,43 @@ QFrame#Sidebar {{
     def page_ids(self) -> tuple[str, ...]:
         """Идентификаторы разделов (для окна и тестов)."""
         return tuple(page_id for page_id, _, _ in NAV_ITEMS)
+
+    def refresh_theme(self) -> None:
+        """Rebuild sidebar token-derived QSS after live theme switching."""
+        self._apply_frame_qss()
+        self._apply_capsule_qss()
+        for button in self._buttons.values():
+            button.setStyleSheet(_item_qss())
+        self.set_ai_tone(self._ai_tone)
+        self.set_link_tones(*self._link_tones)
+        self._footer_widget.setStyleSheet(
+            f"QFrame#SidebarFooter {{ background: {t.CARD};"
+            f" border: 1px solid {t.BORDER}; border-radius: {t.RADIUS_CONTROL}px; }}"
+        )
+        self._snap_capsule()
+
+    def _apply_frame_qss(self) -> None:
+        glow = (
+            "rgba(255, 255, 255, 0.07)"
+            if t.CURRENT_THEME == "dark"
+            else "rgba(255, 255, 255, 0.85)"
+        )
+        self.setStyleSheet(
+            f"""
+QFrame#Sidebar {{
+    background: qlineargradient(x1: 0, y1: 0, x2: 0, y2: 1,
+        stop: 0 {t.SIDEBAR_TOP}, stop: 1 {t.SIDEBAR_BOTTOM});
+    border-right: 1px solid {t.BORDER};
+    border-top: 1px solid {glow};
+}}
+"""
+        )
+
+    def _apply_capsule_qss(self) -> None:
+        self._capsule.setStyleSheet(
+            f"QFrame {{ background: {t.tint(t.BLUE, 0.14)};"
+            f" border: 1px solid {t.tint(t.BLUE, 0.22)}; border-radius: 9px; }}"
+        )
 
     # ── Капсула активного раздела ─────────────────────────────────────────────
 

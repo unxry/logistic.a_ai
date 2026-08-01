@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from app.core.commands import SaveSettings
 from app.core.errors import SecretStoreError, SettingsCorruptedError, SettingsError
-from app.core.events import ErrorOccurred, SettingsChanged
+from app.core.events import ActiveVehicleChanged, ErrorOccurred, SettingsChanged
 from app.core.models.settings import AppSettings
 from app.core.ports import EventPublisher, SecretStore, SettingsRepository
 from app.core.ports.secret_store import TELEGRAM_BOT_TOKEN_KEY, TELEGRAM_CHAT_ID_KEY
@@ -66,6 +66,7 @@ class SettingsService:
         Ошибка записи логируется, публикуется ErrorOccurred и пробрасывается —
         вызывающий (UI) должен узнать, что сохранение не удалось.
         """
+        previous_vehicle = self.current.vehicle.active_profile() if self._current else None
         try:
             self._repository.save(settings)
         except SettingsError as exc:
@@ -74,6 +75,9 @@ class SettingsService:
             raise
         self._current = settings
         self._events.publish(SettingsChanged(settings=settings))
+        active_vehicle = settings.vehicle.active_profile()
+        if active_vehicle != previous_vehicle:
+            self._events.publish(ActiveVehicleChanged(vehicle=active_vehicle))
 
     def update(self, mutate: Callable[[AppSettings], AppSettings]) -> AppSettings:
         """Функциональное обновление: ``update(lambda s: replace(s, ...))``."""

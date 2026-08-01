@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
+from app.core.models.settings import Theme
 from app.ui.pages.base import Page
 from app.ui.pages.dashboard import DEMO_SERIES
 from app.ui.theme import tokens as t
@@ -131,8 +133,20 @@ class NotificationHistoryPage(Page):
 class VehiclePage(Page):
     """«Машина» — активный профиль транспорта."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        on_create: Callable[[], None] | None = None,
+        on_edit: Callable[[], None] | None = None,
+        on_duplicate: Callable[[], None] | None = None,
+        on_delete: Callable[[], None] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__("vehicle", "Машина", parent)
+        self._on_create = on_create
+        self._on_edit = on_edit
+        self._on_duplicate = on_duplicate
+        self._on_delete = on_delete
         self._empty = EmptyState(
             "🚗",
             "Профиль транспорта не настроен",
@@ -157,8 +171,36 @@ class VehiclePage(Page):
             f"QLabel {{ color: {t.TEXT_SECONDARY}; background: transparent; }}"
         )
         body.addWidget(self._dimensions)
+        actions = QHBoxLayout()
+        actions.setSpacing(t.SPACE_S)
+        for label, callback in (
+            ("Создать", self._on_create),
+            ("Редактировать", self._on_edit),
+            ("Дублировать", self._on_duplicate),
+            ("Удалить", self._on_delete),
+        ):
+            button = QPushButton(label, self._card)
+            button.setFixedHeight(t.BUTTON_HEIGHT_COMPACT)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setEnabled(callback is not None)
+            if callback is not None:
+                button.clicked.connect(callback)
+            actions.addWidget(button)
+        actions.addStretch(1)
+        body.addLayout(actions)
         self._card.setVisible(False)
         self.content_layout.addWidget(self._card)
+        empty_actions = QHBoxLayout()
+        empty_actions.setSpacing(t.SPACE_S)
+        create_empty = QPushButton("Создать машину", self)
+        create_empty.setFixedHeight(t.BUTTON_HEIGHT)
+        create_empty.setCursor(Qt.CursorShape.PointingHandCursor)
+        create_empty.setEnabled(on_create is not None)
+        if on_create is not None:
+            create_empty.clicked.connect(on_create)
+        empty_actions.addWidget(create_empty)
+        empty_actions.addStretch(1)
+        self.content_layout.addLayout(empty_actions)
         self.content_layout.addStretch(1)
 
     def apply_snapshot(self, snapshot: DashboardSnapshot) -> None:
@@ -293,8 +335,15 @@ class SourcesPage(Page):
 class SettingsPage(Page):
     """«Настройки» — каркас; формы (токен, Chat ID, тарифы) — этап 9.1."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        current_theme: Theme = Theme.DARK,
+        on_theme_changed: Callable[[Theme], None] | None = None,
+        parent: QWidget | None = None,
+    ) -> None:
         super().__init__("settings", "Настройки", parent)
+        self._on_theme_changed = on_theme_changed
         status_card = GlassCard(self)
         body = status_card.body(margin=t.SPACE_L, spacing=t.SPACE_S)
         body.addWidget(SectionLabel("Telegram"))
@@ -305,6 +354,18 @@ class SettingsPage(Page):
         row.addStretch(1)
         body.addLayout(row)
         self.content_layout.addWidget(status_card)
+        theme_card = GlassCard(self)
+        theme_body = theme_card.body(margin=t.SPACE_L, spacing=t.SPACE_S)
+        theme_body.addWidget(SectionLabel("Тема"))
+        self._theme_combo = QComboBox(theme_card)
+        self._theme_combo.addItem("System", Theme.SYSTEM.value)
+        self._theme_combo.addItem("Light", Theme.LIGHT.value)
+        self._theme_combo.addItem("Dark", Theme.DARK.value)
+        index = self._theme_combo.findData(current_theme.value)
+        self._theme_combo.setCurrentIndex(index if index >= 0 else 0)
+        self._theme_combo.currentIndexChanged.connect(self._theme_selected)
+        theme_body.addWidget(self._theme_combo)
+        self.content_layout.addWidget(theme_card)
         self.content_layout.addWidget(
             EmptyState(
                 "⚙️",
@@ -318,3 +379,9 @@ class SettingsPage(Page):
     def apply_snapshot(self, snapshot: DashboardSnapshot) -> None:
         """Показать текущее состояние Telegram."""
         self._telegram_badge.set_badge(snapshot.telegram_status)
+
+    def _theme_selected(self) -> None:
+        if self._on_theme_changed is None:
+            return
+        value = self._theme_combo.currentData()
+        self._on_theme_changed(Theme(str(value)))

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 
 from PySide6.QtCore import QObject, QTimer
 from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
@@ -29,14 +29,17 @@ class MenuBarController(QObject):
         window: object,
         events: EventStream,
         commands: CommandDispatcher,
+        quit_requested: Callable[[], None] | None = None,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._window = window
         self._events = events
         self._commands = commands
+        self._quit_requested = quit_requested
         self._snapshot: DashboardSnapshot | None = None
         self._pulse = 0
+        self._attached = False
 
         self._tray = QSystemTrayIcon(self)
         self._tray.setToolTip("LogistAI")
@@ -51,14 +54,20 @@ class MenuBarController(QObject):
 
     def attach(self) -> None:
         """Подписаться на события и показать иконку."""
+        if self._attached:
+            return
         self._events.subscribe(DashboardUpdated, self._on_dashboard_updated)
         self._events.subscribe(CargoRecommendationChanged, self._on_recommendations)
         self._tray.show()
+        self._attached = True
 
     def detach(self) -> None:
         """Отписаться и спрятать иконку."""
-        self._events.unsubscribe(DashboardUpdated, self._on_dashboard_updated)
-        self._events.unsubscribe(CargoRecommendationChanged, self._on_recommendations)
+        self._animation.stop()
+        if self._attached:
+            self._events.unsubscribe(DashboardUpdated, self._on_dashboard_updated)
+            self._events.unsubscribe(CargoRecommendationChanged, self._on_recommendations)
+            self._attached = False
         self._tray.hide()
 
     def _on_dashboard_updated(self, event: DashboardUpdated) -> None:
@@ -107,7 +116,7 @@ class MenuBarController(QObject):
         self._menu.addAction(self._action("Пауза", self._pause_ati))
         self._menu.addAction(self._action("Настройки", self._open_settings))
         self._menu.addSeparator()
-        self._menu.addAction(self._action("Выход", QApplication.quit))
+        self._menu.addAction(self._action("Выход", self._quit))
 
     def _action(self, title: str, callback: object) -> QAction:
         action = QAction(title, self._menu)
@@ -139,6 +148,12 @@ class MenuBarController(QObject):
 
     def _pause_ati(self) -> None:
         self._schedule(self._commands.dispatch(PauseJob(job_name="source:ati")))
+
+    def _quit(self) -> None:
+        if self._quit_requested is not None:
+            self._quit_requested()
+        else:
+            QApplication.quit()
 
     def _schedule(self, coroutine: Coroutine[object, object, object]) -> None:
         try:

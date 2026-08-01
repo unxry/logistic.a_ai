@@ -85,12 +85,18 @@ class ReasonChip(QLabel):
 
     def __init__(self, text: str, parent: QWidget | None = None, *, max_px: int = 210) -> None:
         super().__init__(parent)
+        self._text = text
+        self._max_px = max_px
+        self.refresh_theme()
+        _elide(self, f"{reason_icon(text)} {text}", max_px)
+
+    def refresh_theme(self) -> None:
+        """Refresh chip contrast after live theme switching."""
         self.setStyleSheet(
             f"QLabel {{ background: {t.tint(t.GREEN, 0.10)}; color: {t.TEXT};"
             f" border-radius: {t.RADIUS_CHIP}px; padding: 3px 9px;"
             f" font-size: {t.CAPTION_PT}pt; }}"
         )
-        _elide(self, f"{reason_icon(text)} {text}", max_px)
 
 
 class ReasonCard(QFrame):
@@ -98,11 +104,10 @@ class ReasonCard(QFrame):
 
     def __init__(self, text: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._text = text
+        self._body: QLabel | None = None
         self.setObjectName("ReasonCard")
-        self.setStyleSheet(
-            f"QFrame#ReasonCard {{ background: {t.CARD}; border: 1px solid {t.BORDER};"
-            f" border-radius: {t.RADIUS_CONTROL}px; }}"
-        )
+        self.refresh_theme()
         layout = QHBoxLayout(self)
         layout.setContentsMargins(t.SPACE_M, t.SPACE_S + 2, t.SPACE_M, t.SPACE_S + 2)
         layout.setSpacing(t.SPACE_M)
@@ -114,7 +119,17 @@ class ReasonCard(QFrame):
         body = QLabel(text, self)
         body.setWordWrap(True)
         body.setStyleSheet(f"QLabel {{ color: {t.TEXT}; background: transparent; }}")
+        self._body = body
         layout.addWidget(body, stretch=1)
+
+    def refresh_theme(self) -> None:
+        """Refresh explanation card contrast after live theme switching."""
+        self.setStyleSheet(
+            f"QFrame#ReasonCard {{ background: {t.CARD}; border: 1px solid {t.BORDER};"
+            f" border-radius: {t.RADIUS_CONTROL}px; }}"
+        )
+        if self._body is not None:
+            self._body.setStyleSheet(f"QLabel {{ color: {t.TEXT}; background: transparent; }}")
 
 
 def build_explanation_panel(card: CargoCardViewModel, parent: QWidget | None = None) -> QWidget:

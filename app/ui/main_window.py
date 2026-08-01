@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Coroutine, Sequence
+from dataclasses import replace
 from functools import partial
 
 from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut
@@ -21,7 +22,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.core.commands import FavoriteCargo, IgnoreCargo
+from app.core.clock import utc_now
+from app.core.commands import FavoriteCargo, IgnoreCargo, SaveSettings
+from app.core.events import SettingsChanged
+from app.core.models.logistics.vehicle_profile import BodyType, VehicleProfile, VehicleType
+from app.core.models.settings import AppSettings, Theme, UISettings, VehicleSettings
 from app.ui.bridge import UiEventBridge
 from app.ui.pages import (
     AnalyticsPage,
@@ -37,6 +42,7 @@ from app.ui.pages import (
 )
 from app.ui.theme import build_global_qss, enter_page
 from app.ui.theme import tokens as t
+from app.ui.theme.manager import ThemeManager
 from app.ui.viewmodels import (
     BadgeTone,
     CargoCardViewModel,
@@ -68,6 +74,8 @@ class MainWindow(QMainWindow):
         events: EventStream,
         *,
         command_dispatcher: CommandDispatcher | None = None,
+        current_settings: AppSettings | None = None,
+        theme_manager: ThemeManager | None = None,
         background_on_close: bool = False,
         demo: bool = False,
         extra_commands: Sequence[Command] = (),
@@ -76,6 +84,8 @@ class MainWindow(QMainWindow):
         self._view_model = view_model
         self._dashboard = dashboard
         self._commands = command_dispatcher
+        self._settings = current_settings if current_settings is not None else AppSettings()
+        self._theme_manager = theme_manager
         self._background_on_close = background_on_close
         self._tasks: set[asyncio.Task[object]] = set()
 
@@ -116,12 +126,20 @@ class MainWindow(QMainWindow):
                 on_ignore=self._ignore_cargo,
             ),
             FavoritesPage(on_explain=self._explain_cargo, on_ignore=self._ignore_cargo),
-            VehiclePage(),
+            VehiclePage(
+                on_create=self._create_vehicle,
+                on_edit=self._edit_vehicle,
+                on_duplicate=self._duplicate_vehicle,
+                on_delete=self._delete_vehicle,
+            ),
             SearchPage(),
             AnalyticsPage(demo=demo),
             NotificationHistoryPage(),
             SourcesPage(),
-            SettingsPage(),
+            SettingsPage(
+                current_theme=self._settings.ui.theme,
+                on_theme_changed=self._change_theme,
+            ),
         ):
             self._pages[page.page_id] = page
             self.pages.addWidget(page)
@@ -140,7 +158,13 @@ class MainWindow(QMainWindow):
         self._bridge.dashboard_updated.connect(self._on_dashboard_updated)
         self._bridge.recommendations_changed.connect(self._on_recommendations)
         self._bridge.source_changed.connect(self._on_source_changed)
+        events.subscribe(SettingsChanged, self._on_settings_changed)
+        self._events = events
         self._install_shortcuts()
+
+    def set_theme_manager(self, theme_manager: ThemeManager) -> None:
+        """Attach live ThemeManager after the root window exists."""
+        self._theme_manager = theme_manager
 
     # ── Навигация и команды ───────────────────────────────────────────────────
 
@@ -276,6 +300,102 @@ class MainWindow(QMainWindow):
 
         self._schedule(_favorite())
 
+    def _change_theme(self, theme: Theme) -> None:
+        """Save theme via CommandBus, then apply it live."""
+        new_settings = replace(
+            self._settings, ui=UISettings(theme=theme, autostart=self._settings.ui.autostart)
+        )
+        if self._theme_manager is not None:
+            self._theme_manager.apply(theme)
+        self._schedule(self._save_settings(new_settings))
+
+    async def _save_settings(self, settings: AppSettings) -> None:
+        if self._commands is not None:
+            await self._commands.dispatch(SaveSettings(settings=settings))
+        self._settings = settings
+        await self._dashboard.refresh()
+
+    def _create_vehicle(self) -> None:
+        profile = VehicleProfile.create(
+            name="MAN TGL 12т",
+            vehicle_type=VehicleType.TRUCK,
+            body_type=BodyType.TENT,
+            cargo_capacity_kg=6000,
+            length_cm=620,
+            width_cm=245,
+            height_cm=250,
+            volume_m3=38.0,
+            pallet_capacity=14,
+            max_weight_kg=12000,
+            allowed_regions=("RU",),
+        )
+        vehicle = VehicleSettings(
+            profiles=(*self._settings.vehicle.profiles, profile), active_profile_id=profile.id
+        )
+        self._schedule(self._save_settings(replace(self._settings, vehicle=vehicle)))
+        self.toasts.show_toast(
+            "Машина создана", "AI Matching начнёт использовать новый профиль", BadgeTone.OK
+        )
+
+    def _edit_vehicle(self) -> None:
+        active = self._settings.vehicle.active_profile()
+        if active is None:
+            self._create_vehicle()
+            return
+        edited = replace(active, name=f"{active.name} · обновлено", updated_at=utc_now())
+        profiles = tuple(
+            edited if item.id == active.id else item for item in self._settings.vehicle.profiles
+        )
+        self._schedule(
+            self._save_settings(
+                replace(self._settings, vehicle=replace(self._settings.vehicle, profiles=profiles))
+            )
+        )
+        self.toasts.show_toast(
+            "Машина обновлена", "Рекомендации будут пересчитаны с новым профилем", BadgeTone.OK
+        )
+
+    def _duplicate_vehicle(self) -> None:
+        active = self._settings.vehicle.active_profile()
+        if active is None:
+            self._create_vehicle()
+            return
+        duplicate = VehicleProfile.create(
+            name=f"{active.name} · копия",
+            vehicle_type=active.vehicle_type,
+            body_type=active.body_type,
+            cargo_capacity_kg=active.cargo_capacity_kg,
+            length_cm=active.length_cm,
+            width_cm=active.width_cm,
+            height_cm=active.height_cm,
+            volume_m3=active.volume_m3,
+            pallet_capacity=active.pallet_capacity,
+            max_weight_kg=active.max_weight_kg,
+            allowed_regions=active.allowed_regions,
+            empty_weight_kg=active.empty_weight_kg,
+            axle_weight_kg=active.axle_weight_kg,
+            vehicle_permits=active.vehicle_permits,
+            has_trailer=active.has_trailer,
+            eco_class=active.eco_class,
+        )
+        vehicle = VehicleSettings(
+            profiles=(*self._settings.vehicle.profiles, duplicate), active_profile_id=duplicate.id
+        )
+        self._schedule(self._save_settings(replace(self._settings, vehicle=vehicle)))
+        self.toasts.show_toast("Машина продублирована", duplicate.name, BadgeTone.OK)
+
+    def _delete_vehicle(self) -> None:
+        active = self._settings.vehicle.active_profile()
+        if active is None:
+            return
+        profiles = tuple(item for item in self._settings.vehicle.profiles if item.id != active.id)
+        next_active = profiles[0].id if profiles else None
+        vehicle = VehicleSettings(profiles=profiles, active_profile_id=next_active)
+        self._schedule(self._save_settings(replace(self._settings, vehicle=vehicle)))
+        self.toasts.show_toast(
+            "Машина удалена", "Undo появится после журнала действий", BadgeTone.WARNING
+        )
+
     # ── Служебное ─────────────────────────────────────────────────────────────
 
     def _build_status_bar(self) -> None:
@@ -318,4 +438,8 @@ class MainWindow(QMainWindow):
                 ignore()
             return
         self._bridge.detach()
+        self._events.unsubscribe(SettingsChanged, self._on_settings_changed)
         super().closeEvent(event)  # type: ignore[arg-type]
+
+    def _on_settings_changed(self, event: SettingsChanged) -> None:
+        self._settings = event.settings

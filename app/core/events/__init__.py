@@ -31,7 +31,7 @@ from app.core.events.scheduler import (
     SchedulerStopped,
 )
 from app.core.events.search import CargoMatched, CargoRejected, SearchCompleted
-from app.core.events.settings import SettingsChanged
+from app.core.events.settings import ActiveVehicleChanged, SettingsChanged
 from app.core.events.sources import (
     CargoReceived,
     CargoUpdated,
@@ -53,6 +53,7 @@ from app.core.events.workflow import (
 )
 
 __all__ = [
+    "ActiveVehicleChanged",
     "AppClosing",
     "AppStarted",
     "BestCargoSelected",

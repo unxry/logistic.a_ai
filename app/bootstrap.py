@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
 import sys
 from decimal import Decimal
 
@@ -71,6 +72,7 @@ from app.infrastructure.system.build_info import load_build_info
 from app.infrastructure.system.paths import PlatformPaths
 from app.infrastructure.telegram.client import TelegramClient
 from app.infrastructure.telegram.formatting import TelegramNotificationFormatter
+from app.runtime import ShutdownCoordinator
 from app.services.logistics import (
     CargoCompatibilityService,
     CargoWorkflowService,
@@ -739,11 +741,14 @@ def run_app(argv: list[str] | None = None) -> int:
 
     # Локальный импорт: Qt не должен подтягиваться при импорте модуля,
     # чтобы ядро и тесты без GUI-окружения работали свободно.
+    from PySide6.QtGui import QAction, QKeySequence
     from PySide6.QtWidgets import QApplication
     from qasync import QEventLoop
 
     from app.ui.main_window import MainWindow
     from app.ui.menu_bar import MenuBarController
+    from app.ui.theme.fonts import resolve_font_stack
+    from app.ui.theme.manager import ThemeManager
     from app.ui.viewmodels import MOCK_POTENTIAL_PROFIT, mock_best_matches
     from app.ui.viewmodels.main_viewmodel import MainViewModel
     from app.ui.widgets import Command
@@ -766,10 +771,11 @@ def run_app(argv: list[str] | None = None) -> int:
         demo_ati=demo_ati,
         demo_routes=demo_routes,
     )
-    # Тема (Light/Dark) применяется из настроек ДО сборки окна: QSS всех
-    # виджетов собирается из токенов в момент конструирования.
+    # Тема применяется из настроек ДО сборки окна; font stack строится только
+    # из реально доступных Qt families, чтобы не было SF Pro alias warning.
     from app.ui.theme import tokens as ui_tokens
 
+    ui_tokens.FONT_STACK = resolve_font_stack()
     ui_tokens.apply_theme(container.settings_service.current.ui.theme.value)
     dashboard = container.dashboard_viewmodel
     logger.info(
@@ -807,17 +813,37 @@ def run_app(argv: list[str] | None = None) -> int:
         dashboard,
         container.event_bus,
         command_dispatcher=container.command_bus,
+        current_settings=container.settings_service.current,
         background_on_close=True,
         demo=demo,
         extra_commands=extra_commands,
+    )
+    theme_manager = ThemeManager(app, window)
+    theme_manager.apply(container.settings_service.current.ui.theme, animated=False)
+    window.set_theme_manager(theme_manager)
+    shutdown = ShutdownCoordinator(
+        event_bus=container.event_bus,
+        command_bus=container.command_bus,
+        telegram_bot=container.telegram_bot,
+        recommendation_pipeline=container.recommendation_pipeline,
+        ati_client=container.ati_client,
+        database=container.database,
     )
     menu_bar = MenuBarController(
         window=window,
         events=container.event_bus,
         commands=container.command_bus,
+        quit_requested=lambda: shutdown.request("menu_bar"),
         parent=app,
     )
+    shutdown.set_menu_bar(menu_bar)
     menu_bar.attach()
+    quit_action = QAction(window)
+    quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+    quit_action.triggered.connect(lambda: shutdown.request("cmd_q"))
+    window.addAction(quit_action)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda _signum, _frame: shutdown.request("signal"))
     window.show()
     container.event_bus.publish(AppStarted())
 
@@ -867,23 +893,16 @@ def run_app(argv: list[str] | None = None) -> int:
                 logger.info("Уведомление отправлено через Notification Center")
         await dashboard.refresh()
 
-    async def _shutdown() -> None:
-        """Graceful: остановить задачи, дождаться пайплайна, закрыть httpx."""
-        menu_bar.detach()
-        try:
-            await container.command_bus.dispatch(StopScheduler())
-        except Exception:  # выключение не должно падать
-            logger.exception("Scheduler не остановился чисто")
-        await container.telegram_bot.stop()
-        await container.recommendation_pipeline.wait_idle()
-        await container.ati_client.aclose()
-
-    close_event = asyncio.Event()
-    app.aboutToQuit.connect(close_event.set)
     with loop:
         startup_task = loop.create_task(_startup())
-        loop.run_until_complete(close_event.wait())
-        startup_task.cancel()
-        loop.run_until_complete(_shutdown())
-    container.database.close()
+        shutdown.add_startup_task(startup_task)
+        startup_task.add_done_callback(
+            lambda task: (
+                shutdown.request("startup_failed")
+                if not task.cancelled() and task.exception() is not None
+                else None
+            )
+        )
+        loop.run_until_complete(shutdown.finished.wait())
+    app.quit()
     return 0

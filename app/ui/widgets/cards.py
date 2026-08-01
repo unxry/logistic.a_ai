@@ -43,6 +43,10 @@ class GlassCard(QFrame):
             f" border-radius: {self._radius}px; }}"
         )
 
+    def refresh_theme(self) -> None:
+        """Rebuild token-derived surface QSS after live theme switching."""
+        self._set_surface(background=t.CARD, border=t.BORDER)
+
 
 class HoverCard(GlassCard):
     """Интерактивная карточка: hover — подсветка фона, синяя кромка и подъём
@@ -80,6 +84,12 @@ class HoverCard(GlassCard):
         self._set_surface(background=t.CARD, border=t.BORDER)
         for widget in self._hover_targets:
             AnimationManager.instance().animate_opacity(widget, start=1.0, end=0.0)
+
+    def refresh_theme(self) -> None:
+        """Keep current hover surface while rebuilding token-derived colors."""
+        background = t.CARD_HOVER if self._hovered else t.CARD
+        border = "rgba(10, 132, 255, 0.35)" if self._hovered else t.BORDER
+        self._set_surface(background=background, border=border)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 (Qt API)
         """Нажатие прижимает карточку: тень ACTIVE (быстро)."""
@@ -152,6 +162,18 @@ class MetricCard(HoverCard):
         """Подключить тонкий график (только при реальном ряде данных)."""
         self._sparkline.set_values(values, color=color)
         self._sparkline.setVisible(True)
+
+    def refresh_theme(self) -> None:
+        """Refresh card and metric labels for live Light/Dark switching."""
+        super().refresh_theme()
+        self._value.setStyleSheet(
+            f"QLabel {{ font-size: {t.DISPLAY_PT - 6}pt; font-weight: 700;"
+            f" color: {t.TEXT}; background: transparent; }}"
+        )
+        self._hint.setStyleSheet(
+            f"QLabel {{ color: {t.TEXT_SECONDARY}; font-size: {t.CAPTION_PT}pt;"
+            f" background: transparent; }}"
+        )
 
     def _set_hint(self, hint: str) -> None:
         self._hint.setText(hint)

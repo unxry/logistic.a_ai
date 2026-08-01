@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 pytest.importorskip("PySide6", reason="PySide6 не установлен в этом окружении")
 pytest.importorskip("pytestqt", reason="pytest-qt не установлен в этом окружении")
 
+from PySide6.QtWidgets import QApplication
+
 from app.buses import EventBus
+from app.core.commands import Command, SaveSettings
 from app.core.models.build_info import BuildInfo, BuildMode
+from app.core.models.settings import AppSettings, Theme
 from app.ui.main_window import MainWindow
+from app.ui.theme.manager import ThemeManager
 from app.ui.viewmodels import (
     MOCK_NOW,
     MOCK_POTENTIAL_PROFIT,
@@ -24,13 +29,36 @@ from app.ui.viewmodels import (
 )
 
 
-def _window(qtbot: Any) -> tuple[MainWindow, DashboardViewModel]:
+class _Dispatcher:
+    def __init__(self) -> None:
+        self.saved: list[AppSettings] = []
+
+    async def dispatch[R](self, command: Command[R]) -> R:
+        if isinstance(command, SaveSettings):
+            self.saved.append(command.settings)
+        return cast(R, None)
+
+
+def _window(
+    qtbot: Any,
+    *,
+    dispatcher: _Dispatcher | None = None,
+) -> tuple[MainWindow, DashboardViewModel]:
     bus = EventBus()
     dashboard = DashboardViewModel(
         provider=MockDashboardDataProvider(), events=bus, clock=lambda: MOCK_NOW
     )
     info = BuildInfo(version="0.0.0-test", build_date=None, git_commit=None, mode=BuildMode.DEBUG)
-    window = MainWindow(MainViewModel(info), dashboard, bus, demo=True)
+    window = MainWindow(
+        MainViewModel(info),
+        dashboard,
+        bus,
+        command_dispatcher=dispatcher,
+        current_settings=AppSettings(),
+        demo=True,
+    )
+    app = cast(QApplication, QApplication.instance())
+    window.set_theme_manager(ThemeManager(app, window))
     qtbot.addWidget(window)
     window.show()  # оверлеи (палитра, тосты) видимы только у показанного окна
     return window, dashboard
@@ -56,7 +84,7 @@ def test_window_shell_builds(qtbot: Any) -> None:
 
 def test_navigation_switches_pages(qtbot: Any) -> None:
     window, _ = _window(qtbot)
-    for page_id in ("analytics", "sources", "settings", "dashboard"):
+    for page_id in window.sidebar.page_ids():
         window.show_page(page_id)
         assert window.current_page_id() == page_id
 
@@ -148,3 +176,43 @@ def test_source_error_shows_toast(qtbot: Any) -> None:
     )
     window._on_source_changed(failed)
     assert window.toasts.isVisible()
+
+
+def test_all_buttons_smoke(qtbot: Any) -> None:
+    dispatcher = _Dispatcher()
+    window, _ = _window(qtbot, dispatcher=dispatcher)
+
+    window._create_vehicle()
+    qtbot.wait(20)
+    window._duplicate_vehicle()
+    qtbot.wait(20)
+    window._edit_vehicle()
+    qtbot.wait(20)
+    window._delete_vehicle()
+    qtbot.wait(20)
+    window._change_theme(Theme.LIGHT)
+    qtbot.wait(20)
+
+    assert dispatcher.saved
+    assert dispatcher.saved[-1].ui.theme is Theme.LIGHT
+
+
+def test_theme_switch_no_recreate_window(qtbot: Any) -> None:
+    window, _ = _window(qtbot)
+    identity = id(window)
+
+    window._change_theme(Theme.LIGHT)
+    window._change_theme(Theme.DARK)
+    qtbot.wait(60)
+
+    assert id(window) == identity
+
+
+def test_sidebar_rapid_hover(qtbot: Any) -> None:
+    window, _ = _window(qtbot)
+
+    for index in range(50):
+        page_id = window.sidebar.page_ids()[index % len(window.sidebar.page_ids())]
+        window.sidebar.select(page_id)
+
+    assert window.sidebar._capsule_animation is not None

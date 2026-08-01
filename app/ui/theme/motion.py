@@ -9,6 +9,7 @@ cascade (каскад секций), enter_page (переход раздела),
 
 from __future__ import annotations
 
+import weakref
 from collections.abc import Callable, Sequence
 
 import shiboken6
@@ -30,15 +31,25 @@ from PySide6.QtWidgets import (
 from app.ui.theme import tokens as t
 from app.ui.theme.effects import SafeShadow
 
-_ENTRANCE_ANIMATION_PROPERTY = "_logistai_entrance_animation"
+_ENTRANCE_ANIMATIONS: weakref.WeakKeyDictionary[QWidget, QVariantAnimation] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def _restart_entrance(widget: QWidget, animation: QVariantAnimation) -> None:
     """Прервать предыдущую входную анимацию виджета (анимации прерываемы)."""
-    previous = widget.property(_ENTRANCE_ANIMATION_PROPERTY)
+    if not shiboken6.isValid(widget):
+        return
+    previous = _ENTRANCE_ANIMATIONS.get(widget)
     if isinstance(previous, QVariantAnimation) and shiboken6.isValid(previous):
         previous.stop()
-    widget.setProperty(_ENTRANCE_ANIMATION_PROPERTY, animation)
+    _ENTRANCE_ANIMATIONS[widget] = animation
+
+    def _cleanup() -> None:
+        if _ENTRANCE_ANIMATIONS.get(widget) is animation:
+            _ENTRANCE_ANIMATIONS.pop(widget, None)
+
+    animation.finished.connect(_cleanup)
 
 
 def apply_shadow(widget: QWidget, spec: t.ShadowSpec) -> SafeShadow:
