@@ -1,13 +1,13 @@
 """Реальная проверка Telegram-подсистемы (пункт 18 этапа 3).
 
-Запуск на своей машине (секреты ТОЛЬКО из переменных окружения):
+Запуск на своей машине (секреты из Keychain или переменных окружения):
 
     TELEGRAM_BOT_TOKEN="123:ABC..." TELEGRAM_CHAT_ID="123456789" \\
         uv run python scripts/telegram_smoke.py
 
 Сценарий: getMe → getChat → тестовое сообщение (через тот же
 TelegramClient и форматтер, что использует приложение).
-Токен в вывод и логи не попадает.
+Токен, chat_id и название чата в вывод и логи не попадают.
 """
 
 from __future__ import annotations
@@ -17,15 +17,18 @@ import os
 import sys
 
 from app.core.errors import TelegramError
+from app.core.ports.secret_store import TELEGRAM_BOT_TOKEN_KEY, TELEGRAM_CHAT_ID_KEY
+from app.infrastructure.settings.secret_store import KeyringSecretStore
 from app.infrastructure.telegram.client import TelegramClient
 from app.infrastructure.telegram.formatting import TelegramNotificationFormatter
 
 
 async def main() -> int:
-    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    store = KeyringSecretStore()
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "") or (store.get(TELEGRAM_BOT_TOKEN_KEY) or "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "") or (store.get(TELEGRAM_CHAT_ID_KEY) or "")
     if not token or not chat_id:
-        print("Задайте переменные окружения TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID")
+        print("Сохраните Telegram credentials в Keychain или задайте env-переменные")
         return 2
 
     client = TelegramClient(token)
@@ -35,8 +38,8 @@ async def main() -> int:
         print(f"OK — бот @{bot.username}")
 
         print("2/3 getChat…", end=" ", flush=True)
-        chat = await client.get_chat(chat_id)
-        print(f"OK — чат «{chat.title or chat.type}»")
+        await client.get_chat(chat_id)
+        print("OK — Chat: verified")
 
         print("3/3 sendMessage…", end=" ", flush=True)
         message_id = await client.send_message(

@@ -64,6 +64,10 @@ class AtiSource:
         """Описание источника."""
         return _SPEC
 
+    def credential_status(self, reference: str) -> object:
+        """Статус ATI-токена без раскрытия секрета (для SourceRuntime)."""
+        return self._client.token_status(reference)
+
     async def fetch(self, context: SourceContext) -> SourceResult:
         """Получить грузы ATI по пользовательской конфигурации."""
         started = perf_counter()
@@ -74,7 +78,7 @@ class AtiSource:
 
         if not self._client.has_credentials(reference):
             raise SourceAuthenticationError(
-                "Учётные данные ATI не настроены — добавьте api_key или login+password"
+                "Учётные данные ATI не настроены — добавьте access_token или login+password"
                 " в Keychain и укажите credentials_reference в конфигурации источника"
             )
 

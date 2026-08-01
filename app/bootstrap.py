@@ -183,7 +183,7 @@ def build_container(
         formatter=TelegramNotificationFormatter(),
         event_bus=event_bus,
         token_provider=settings_service.get_bot_token,
-        chat_id_provider=lambda: settings_service.current.telegram.chat_id,
+        chat_id_provider=settings_service.get_chat_id,
     )
 
     # Notification Center: каналы и форматтеры регистрируются ОДИН раз здесь
@@ -705,7 +705,7 @@ def _build_telegram_bot(
     return TelegramBotService(
         api_factory=TelegramClient,
         token_provider=settings_service.get_bot_token,
-        chat_id_provider=lambda: settings_service.current.telegram.chat_id,
+        chat_id_provider=settings_service.get_chat_id,
         router=router,
         details_provider=_details,
         ignore_sink=_ignore,
@@ -789,7 +789,7 @@ def run_app(argv: list[str] | None = None) -> int:
         else ()
     )
     window = MainWindow(
-        MainViewModel(container.build_info),
+        MainViewModel(container.build_info, mode_label="DEMO" if demo or demo_ati else "LIVE"),
         dashboard,
         container.event_bus,
         command_dispatcher=container.command_bus,

@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 
 from app.core.errors import SourceError, SourceParsingError, SourceUnavailableError
+from app.core.models.sources import AtiTokenStatus
 from app.core.ports import SourceCredentialProvider
 from app.infrastructure.sources.ati.auth import AtiAuthProvider
 from app.infrastructure.sources.ati.errors import map_ati_status
@@ -29,6 +30,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://api.ati.su"
 #: Эндпоинты (при изменении контракта ATI правится только этот блок).
 SEARCH_PATH = "/v1.0/loads/search"
+LOADS_PATH = "/v1.0/loads"
+BYBOARDS_PATH = "/v1.0/loads/search/byboards"
 LOAD_PATH = "/v1.0/loads/{load_id}"
 
 _TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
@@ -53,12 +56,17 @@ class AtiClient:
         self._base_url = base_url
         self._transport = transport
         self._client: httpx.AsyncClient | None = None
+        self.last_pages_requested = 0
 
     # ── Жизненный цикл ────────────────────────────────────────────────────────
 
     def has_credentials(self, credentials_reference: str) -> bool:
         """Настроен ли доступ (значения секретов не читаются в логи)."""
         return self._auth.has_credentials(credentials_reference)
+
+    def token_status(self, credentials_reference: str) -> AtiTokenStatus:
+        """Состояние ATI-токена без раскрытия значения."""
+        return self._auth.token_status(credentials_reference)
 
     async def aclose(self) -> None:
         """Graceful shutdown: закрыть httpx-клиент (зовёт composition root)."""
@@ -76,6 +84,17 @@ class AtiClient:
         filters: Mapping[str, str],
     ) -> list[dict[str, Any]]:
         """Поиск грузов с пагинацией до ``max_results`` (фильтры — README)."""
+        self.last_pages_requested = 0
+        if filters.get("api_mode") == "byboards":
+            payload = await self._request("GET", BYBOARDS_PATH, credentials_reference)
+            self.last_pages_requested = 1
+            return self._extract_loads(payload)[:max_results]
+
+        if filters.get("api_mode") == "owned_loads":
+            payload = await self._request("GET", LOADS_PATH, credentials_reference)
+            self.last_pages_requested = 1
+            return self._extract_loads(payload)[:max_results]
+
         body = self._search_body(filters)
         loads: list[dict[str, Any]] = []
         page = 1
@@ -93,6 +112,7 @@ class AtiClient:
             page += 1
             if len(batch) < _PER_PAGE:
                 break
+        self.last_pages_requested = page - 1
         logger.info("ATI: поиск вернул %d грузов (страниц: %d)", len(loads[:max_results]), page - 1)
         return loads[:max_results]
 

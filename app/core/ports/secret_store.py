@@ -7,6 +7,7 @@ from typing import Protocol
 # Имена секретов — часть контракта: адаптеры и сервисы используют константы,
 # а не «магические» строки.
 TELEGRAM_BOT_TOKEN_KEY = "telegram_bot_token"
+TELEGRAM_CHAT_ID_KEY = "telegram_chat_id"
 
 
 class SecretStore(Protocol):

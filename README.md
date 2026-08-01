@@ -27,7 +27,6 @@ Python 3.13+ · PySide6 · qasync · httpx · SQLite · platformdirs · keyring
 
 ```bash
 uv sync                                            # зависимости (+dev)
-mv pre-commit-config.yaml .pre-commit-config.yaml  # однократно
 uv run pre-commit install                          # git-хуки (однократно, обязательно)
 uv run python main.py          # запуск приложения
 uv run python main.py --demo-routes  # demo-smoke маршрута Yandex Truck
@@ -52,25 +51,37 @@ Linux (полный набор проверок) + macOS (тесты на цел
 
 Секреты живут ТОЛЬКО в Keychain (macOS) — не в JSON и не в коде.
 
-1. **Ключ в Keychain.** Получите личный токен в кабинете ati.su и сохраните
-   его в связке ключей под сервисом LogistAI:
-   - поле `source:ati_main:api_key` — сам токен
-   - (альтернатива: `source:ati_main:login` + `source:ati_main:password` —
-     клиент сам получит и будет обновлять сессионный токен)
-2. **Конфигурация источника** — `sources.json` рядом с настройками:
+1. **ATI credentials.** Получите официальный временный ATI token и сохраните
+   его интерактивно:
+
+   ```bash
+   uv run python scripts/store_ati_credentials.py
+   ```
+
+   Скрипт пишет только в Keychain:
+   `source:ati_main:client_id`, `source:ati_main:access_token`,
+   `source:ati_main:token_expires_at`; в выводе — только маскированные значения.
+2. **Telegram credentials.** Сохраните Bot Token и Chat ID так же через Keychain:
+
+   ```bash
+   uv run python scripts/store_telegram_credentials.py
+   uv run python scripts/telegram_smoke.py
+   ```
+
+3. **Конфигурация источника** — `sources.json` рядом с настройками:
 
    ```json
    {
      "configurations": [{
        "id": "…", "source_id": "ati", "enabled": true,
-       "name": "ATI Москва",
+       "name": "ATI Live",
        "credentials_reference": "ati_main",
        "polling_interval_seconds": 300,
        "max_results": 100,
        "filters": {
-         "regions": "Москва, Московская область",
-         "min_weight": "1000",
-         "max_weight": "20000"
+         "api_mode": "byboards",
+         "max_weight": "6000",
+         "cargo_types": "тент"
        },
        "created_at": "2026-07-31T12:00:00+00:00",
        "updated_at": "2026-07-31T12:00:00+00:00"
@@ -78,10 +89,21 @@ Linux (полный набор проверок) + macOS (тесты на цел
    }
    ```
 
-3. **Запуск.** Scheduler стартует вместе с приложением: ATI опрашивается
+   `byboards` использует официальный carrier endpoint для персональных площадок.
+   Общая площадка ATI.SU через этот API не выдаётся; если аккаунт не состоит
+   в персональной площадке и не имеет своих грузов, live-smoke честно вернёт
+   `Received: 0`.
+
+4. **Запуск.** Scheduler стартует вместе с приложением: ATI опрашивается
    каждые `polling_interval_seconds`, найденные грузы проходят дедупликацию,
    поиск и интеллектуальный подбор; лучший груз приходит уведомлением и
    появляется в Hero-карточке дашборда.
+
+Live-проверка без раскрытия секретов:
+
+```bash
+uv run python scripts/ati_live_smoke.py
+```
 
 Проверить весь конвейер без ключей и сети:
 

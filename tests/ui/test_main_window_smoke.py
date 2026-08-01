@@ -38,7 +38,7 @@ def _window(qtbot: Any) -> tuple[MainWindow, DashboardViewModel]:
 
 def test_window_shell_builds(qtbot: Any) -> None:
     window, _ = _window(qtbot)
-    assert window.windowTitle() == "LogistAI"
+    assert window.windowTitle() == "LogistAI · LIVE"
     assert window.minimumWidth() >= 1080
     assert window.sidebar.page_ids() == (
         "dashboard",

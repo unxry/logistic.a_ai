@@ -15,7 +15,7 @@ from app.core.errors import SecretStoreError, SettingsCorruptedError, SettingsEr
 from app.core.events import ErrorOccurred, SettingsChanged
 from app.core.models.settings import AppSettings
 from app.core.ports import EventPublisher, SecretStore, SettingsRepository
-from app.core.ports.secret_store import TELEGRAM_BOT_TOKEN_KEY
+from app.core.ports.secret_store import TELEGRAM_BOT_TOKEN_KEY, TELEGRAM_CHAT_ID_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +89,16 @@ class SettingsService:
             logger.exception("Хранилище секретов недоступно")
             self._events.publish(ErrorOccurred(source="secrets", message=str(exc)))
             raise
+
+    def get_chat_id(self) -> str:
+        """Прочитать Telegram Chat ID из Keychain, fallback — legacy JSON."""
+        try:
+            value = self._secret_store.get(TELEGRAM_CHAT_ID_KEY)
+        except SecretStoreError as exc:
+            logger.exception("Хранилище секретов недоступно")
+            self._events.publish(ErrorOccurred(source="secrets", message=str(exc)))
+            raise
+        return value if value else self.current.telegram.chat_id
 
     def apply_bot_token(self, token: str | None) -> None:
         """Применить токен из команды: None — не менять; "" — удалить; иначе записать."""

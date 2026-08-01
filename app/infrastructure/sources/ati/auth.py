@@ -3,8 +3,9 @@
 Два режима на одну и ту же ссылку учётных данных (Keychain через
 SourceCredentialProvider, секреты в коде/JSON не живут):
 
-1. **Статический токен** — поле ``api_key`` (или ``token``): личный ключ из
-   кабинета ATI, не истекает, запросов авторизации не требует.
+1. **Статический токен** — поле ``access_token`` / ``api_key`` / ``token``:
+   Bearer token из кабинета ATI, запросов авторизации не требует. Если рядом
+   задан ``token_expires_at``, истёкший токен не используется.
 2. **Сессия** — поля ``login`` + ``password``: POST /auth/v1.0/token →
    access_token с временем жизни; токен кешируется и обновляется заранее.
 
@@ -25,8 +26,16 @@ import httpx
 
 from app.core.clock import utc_now
 from app.core.errors import SourceAuthenticationError, SourceError
+from app.core.models.sources import AtiTokenState, AtiTokenStatus
 from app.core.ports import SourceCredentialProvider
-from app.core.ports.source_credentials import CRED_API_KEY, CRED_LOGIN, CRED_PASSWORD, CRED_TOKEN
+from app.core.ports.source_credentials import (
+    CRED_ACCESS_TOKEN,
+    CRED_API_KEY,
+    CRED_LOGIN,
+    CRED_PASSWORD,
+    CRED_TOKEN,
+    CRED_TOKEN_EXPIRES_AT,
+)
 from app.infrastructure.sources.ati.errors import map_ati_status
 
 logger = logging.getLogger(__name__)
@@ -36,6 +45,7 @@ TOKEN_PATH = "/auth/v1.0/token"
 #: Обновляем токен заранее, не дожидаясь истечения.
 _EXPIRY_MARGIN = timedelta(seconds=60)
 _DEFAULT_TTL_SECONDS = 3600.0
+_EXPIRING_SOON = timedelta(hours=24)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,11 +69,38 @@ class AtiAuthProvider:
 
     def has_credentials(self, reference: str) -> bool:
         """Настроен ли доступ (статический ключ или логин+пароль)."""
-        if self._static_token(reference) is not None:
+        if self.token_status(reference).can_use:
             return True
         login = self._credentials.get(reference, CRED_LOGIN)
         password = self._credentials.get(reference, CRED_PASSWORD)
         return bool(login) and bool(password)
+
+    def token_status(self, reference: str) -> AtiTokenStatus:
+        """Состояние ATI access token без раскрытия значения секрета."""
+        static = self._static_token(reference)
+        if static is None:
+            return AtiTokenStatus(AtiTokenState.MISSING)
+        expires_at = self._token_expires_at(reference)
+        if expires_at is None:
+            return AtiTokenStatus(AtiTokenState.VALID, masked_token=mask_secret(static))
+        now = self._clock()
+        if expires_at <= now:
+            return AtiTokenStatus(
+                AtiTokenState.EXPIRED,
+                expires_at=expires_at,
+                masked_token=mask_secret(static),
+            )
+        if expires_at - now <= _EXPIRING_SOON:
+            return AtiTokenStatus(
+                AtiTokenState.EXPIRING_SOON,
+                expires_at=expires_at,
+                masked_token=mask_secret(static),
+            )
+        return AtiTokenStatus(
+            AtiTokenState.VALID,
+            expires_at=expires_at,
+            masked_token=mask_secret(static),
+        )
 
     async def token(self, client: httpx.AsyncClient, reference: str) -> str:
         """Действующий токен (из кеша, статический или свежая сессия)."""
@@ -73,6 +110,11 @@ class AtiAuthProvider:
 
         static = self._static_token(reference)
         if static is not None:
+            status = self.token_status(reference)
+            if not status.can_use:
+                raise SourceAuthenticationError(
+                    "ATI access_token истёк — обновите токен в настройках"
+                )
             self._cache[reference] = _CachedToken(value=static, expires_at=None)
             return static
 
@@ -86,11 +128,27 @@ class AtiAuthProvider:
     # ── Внутреннее ────────────────────────────────────────────────────────────
 
     def _static_token(self, reference: str) -> str | None:
-        for field in (CRED_API_KEY, CRED_TOKEN):
+        for field in (CRED_ACCESS_TOKEN, CRED_API_KEY, CRED_TOKEN):
             value = self._credentials.get(reference, field)
             if value:
                 return value
         return None
+
+    def _token_expires_at(self, reference: str) -> datetime | None:
+        raw = self._credentials.get(reference, CRED_TOKEN_EXPIRES_AT)
+        if not raw:
+            return None
+        text = raw.strip()
+        try:
+            if len(text) == 10:
+                return datetime.fromisoformat(text + "T23:59:59+00:00")
+            value = datetime.fromisoformat(text)
+        except ValueError:
+            logger.warning("ATI: token_expires_at задан в некорректном формате")
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=self._clock().tzinfo)
+        return value
 
     def _expired(self, cached: _CachedToken) -> bool:
         if cached.expires_at is None:
@@ -122,3 +180,13 @@ class AtiAuthProvider:
         )
         logger.info("ATI: токен получен (ttl %.0f с)", ttl)
         return token
+
+
+def mask_secret(value: str) -> str:
+    """Маска секрета для CLI/log-safe вывода."""
+    text = value.strip()
+    if not text:
+        return ""
+    if len(text) <= 8:
+        return "•" * len(text)
+    return f"{text[:4]}{'•' * 8}{text[-4:]}"

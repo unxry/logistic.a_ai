@@ -51,7 +51,11 @@ class AtiCargoMapper:
         self._put(attributes, ATTR_WEIGHT, self._weight(payload))
         self._map_dimensions(attributes, payload)
         self._put(attributes, ATTR_VOLUME, self._volume(payload))
-        self._put(attributes, ATTR_PALLETS, self._pick(payload, "Pallets", "cargo.pallets"))
+        self._put(
+            attributes,
+            ATTR_PALLETS,
+            self._pick(payload, "Pallets", "cargo.pallets", "cargos.0.packaging.quantity"),
+        )
         self._put(attributes, ATTR_PRICE, self._price(payload))
         self._put(
             attributes,
@@ -61,22 +65,52 @@ class AtiCargoMapper:
         self._put(
             attributes,
             ATTR_CATEGORY,
-            self._pick(payload, "CargoTypeName", "cargo.name", "cargo_type"),
+            self._pick(
+                payload,
+                "CargoTypeName",
+                "cargo.name",
+                "cargos.0.name",
+                "LoadingCargos.0.Name",
+                "Cargo.Name",
+                "cargo_type",
+            ),
         )
         self._put(
             attributes,
             ATTR_BODY_TYPE,
-            self._pick(payload, "CarTypeName", "car_type", "transport.body_type"),
+            self._pick(
+                payload,
+                "CarTypeName",
+                "car_type",
+                "transport.body_type",
+                "Transport.CarType",
+            ),
         )
         self._put(
             attributes,
             ATTR_LOADING_REGION,
-            self._pick(payload, "LoadingCityName", "loading.city_name", "loading.city", "from"),
+            self._pick(
+                payload,
+                "LoadingCityName",
+                "loading.city_name",
+                "loading.city",
+                "route.loading.city_name",
+                "route.loading.city.name",
+                "from",
+            ),
         )
         self._put(
             attributes,
             ATTR_UNLOADING_REGION,
-            self._pick(payload, "UnloadingCityName", "unloading.city_name", "unloading.city", "to"),
+            self._pick(
+                payload,
+                "UnloadingCityName",
+                "unloading.city_name",
+                "unloading.city",
+                "route.unloading.city_name",
+                "route.unloading.city.name",
+                "to",
+            ),
         )
         self._put(attributes, ATTR_LOADING_DATE, self._pick(payload, "LoadingDate", "loading.date"))
         self._put(
@@ -85,8 +119,18 @@ class AtiCargoMapper:
             self._pick(payload, "DeliveryDeadline", "unloading.date_to", "unloading.date"),
         )
 
-        external_id = self._pick(payload, "CargoId", "id", "cargo_application_id")
-        title = self._pick(payload, "CargoTypeName", "cargo.name") or "Груз ATI"
+        external_id = self._pick(payload, "CargoId", "id", "cargo_id", "cargo_application_id")
+        title = (
+            self._pick(
+                payload,
+                "CargoTypeName",
+                "cargo.name",
+                "cargos.0.name",
+                "LoadingCargos.0.Name",
+                "Cargo.Name",
+            )
+            or "Груз ATI"
+        )
         return RawCargo(
             external_id=str(external_id) if external_id is not None else "",
             title=str(title),
@@ -103,7 +147,10 @@ class AtiCargoMapper:
         for path in paths:
             value: Any = payload
             for part in path.split("."):
-                if isinstance(value, Mapping):
+                if isinstance(value, list) and part.isdigit():
+                    index = int(part)
+                    value = value[index] if 0 <= index < len(value) else None
+                elif isinstance(value, Mapping):
                     value = value.get(part)
                 else:
                     value = None
@@ -114,7 +161,15 @@ class AtiCargoMapper:
 
     def _weight(self, payload: Mapping[str, Any]) -> str | None:
         """Вес: число (тонны ATI) или объект {quantity, type} или строка «5 т»."""
-        value = self._pick(payload, "Weight", "cargo.weight", "weight")
+        value = self._pick(
+            payload,
+            "Weight",
+            "cargo.weight",
+            "cargos.0.weight",
+            "LoadingCargos.0.Weight",
+            "Cargo.Weight",
+            "weight",
+        )
         if value is None:
             return None
         if isinstance(value, Mapping):
@@ -129,7 +184,15 @@ class AtiCargoMapper:
         return str(value)  # строка источника («5 т», «5000 кг») — как есть
 
     def _volume(self, payload: Mapping[str, Any]) -> str | None:
-        value = self._pick(payload, "Volume", "cargo.volume", "volume")
+        value = self._pick(
+            payload,
+            "Volume",
+            "cargo.volume",
+            "cargos.0.volume",
+            "LoadingCargos.0.Volume",
+            "Cargo.Volume",
+            "volume",
+        )
         if value is None:
             return None
         if isinstance(value, int | float):
@@ -138,7 +201,13 @@ class AtiCargoMapper:
 
     def _price(self, payload: Mapping[str, Any]) -> str | None:
         value = self._pick(
-            payload, "Price", "payment.rate_sum", "payment.sum", "payment.rate_text", "price"
+            payload,
+            "Price",
+            "TruePrice",
+            "payment.rate_sum",
+            "payment.sum",
+            "payment.rate_text",
+            "price",
         )
         return None if value is None else str(value)
 
@@ -150,9 +219,33 @@ class AtiCargoMapper:
         «620x245x250» (сантиметры) — суффикс НЕ навязывается, эвристика
         CargoNormalizer различает по величине (< 20 — метры).
         """
-        length = self._pick(payload, "Length", "cargo.length")
-        width = self._pick(payload, "Width", "cargo.width")
-        height = self._pick(payload, "Height", "cargo.height")
+        length = self._pick(
+            payload,
+            "Length",
+            "cargo.length",
+            "cargo.sizes.length",
+            "cargos.0.sizes.length.value",
+            "LoadingCargos.0.Sizes.Length",
+            "Cargo.Sizes.Length",
+        )
+        width = self._pick(
+            payload,
+            "Width",
+            "cargo.width",
+            "cargo.sizes.width",
+            "cargos.0.sizes.width.value",
+            "LoadingCargos.0.Sizes.Width",
+            "Cargo.Sizes.Width",
+        )
+        height = self._pick(
+            payload,
+            "Height",
+            "cargo.height",
+            "cargo.sizes.height",
+            "cargos.0.sizes.height.value",
+            "LoadingCargos.0.Sizes.Height",
+            "Cargo.Sizes.Height",
+        )
         suffix = " м"
         if length is None and width is None and height is None:
             combined = self._pick(payload, "Dimensions", "cargo.sizes", "sizes")

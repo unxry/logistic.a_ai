@@ -11,7 +11,7 @@ from app.core.commands import SaveSettings
 from app.core.errors import SettingsCorruptedError, SettingsError
 from app.core.events import ErrorOccurred, SettingsChanged
 from app.core.models.settings import AppSettings, TelegramSettings
-from app.core.ports.secret_store import TELEGRAM_BOT_TOKEN_KEY
+from app.core.ports.secret_store import TELEGRAM_BOT_TOKEN_KEY, TELEGRAM_CHAT_ID_KEY
 from app.infrastructure.settings.secret_store import NullSecretStore
 from app.services.settings_service import SaveSettingsHandler, SettingsService
 
@@ -55,6 +55,21 @@ def test_load_sets_current() -> None:
 
     assert loaded.telegram.chat_id == "42"
     assert service.current is loaded
+
+
+def test_get_chat_id_prefers_keychain_over_legacy_json() -> None:
+    service, repo, secrets, _ = _make_service()
+    repo.stored = dataclasses.replace(AppSettings(), telegram=TelegramSettings(chat_id="legacy"))
+    secrets.set(TELEGRAM_CHAT_ID_KEY, "keychain-chat")
+
+    assert service.get_chat_id() == "keychain-chat"
+
+
+def test_get_chat_id_falls_back_to_json_when_keychain_is_empty() -> None:
+    service, repo, _, _ = _make_service()
+    repo.stored = dataclasses.replace(AppSettings(), telegram=TelegramSettings(chat_id="legacy"))
+
+    assert service.get_chat_id() == "legacy"
 
 
 def test_corrupted_settings_fall_back_to_defaults_and_publish_error() -> None:

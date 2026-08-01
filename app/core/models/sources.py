@@ -39,6 +39,57 @@ class SourceStatus(Enum):
     DISABLED = "disabled"
 
 
+class AtiTokenState(Enum):
+    """Состояние временного ATI access_token."""
+
+    VALID = "valid"
+    EXPIRING_SOON = "expiring_soon"
+    EXPIRED = "expired"
+    MISSING = "missing"
+
+
+@dataclass(frozen=True, slots=True)
+class AtiTokenStatus:
+    """Безопасный статус ATI-токена без значения секрета."""
+
+    state: AtiTokenState
+    expires_at: datetime | None = None
+    masked_token: str = ""
+
+    @property
+    def can_use(self) -> bool:
+        """Можно ли делать API-запрос с этим токеном."""
+        return self.state in (AtiTokenState.VALID, AtiTokenState.EXPIRING_SOON)
+
+
+@dataclass(frozen=True, slots=True)
+class AtiPipelineReport:
+    """Подробный отчёт live ATI-конвейера за один poll."""
+
+    trace_id: str
+    started_at: datetime
+    finished_at: datetime
+    pages_requested: int = 0
+    raw_received: int = 0
+    mapped: int = 0
+    normalization_failed: int = 0
+    duplicates: int = 0
+    updated: int = 0
+    prefilter_rejected: int = 0
+    compatibility_rejected: int = 0
+    matched: int = 0
+    ranked: int = 0
+    notifications_created: int = 0
+    telegram_sent: int = 0
+    telegram_failed: int = 0
+    best_cargo_id: str = ""
+
+    @property
+    def duration_seconds(self) -> float:
+        """Длительность poll в секундах."""
+        return (self.finished_at - self.started_at).total_seconds()
+
+
 @dataclass(frozen=True, slots=True)
 class SourceCapabilities:
     """Возможности источника (Search Engine поймёт доступные фильтры)."""

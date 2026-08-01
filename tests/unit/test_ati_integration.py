@@ -23,8 +23,11 @@ from app.core.models.logistics.compatibility import BasicCompatibilityChecker
 from app.core.models.logistics.driver_profile import DriverProfile
 from app.core.models.notification import Notification, NotificationCategory
 from app.core.models.settings import AppSettings
+from app.core.models.sources import AtiTokenState, SourceConfiguration, SourceContext
+from app.core.ports.source_credentials import CRED_ACCESS_TOKEN, CRED_TOKEN_EXPIRES_AT
 from app.infrastructure.routes import MockRouteProvider
 from app.infrastructure.sources.ati import AtiAuthProvider, AtiCargoMapper, AtiClient, AtiSource
+from app.infrastructure.sources.ati.client import BYBOARDS_PATH, LOADS_PATH
 from app.infrastructure.sources.ati.demo import (
     DEMO_CREDENTIALS_REFERENCE,
     DemoAtiConfigurationRepository,
@@ -122,6 +125,44 @@ async def test_auth_missing_credentials_raises() -> None:
         transport=httpx.MockTransport(lambda request: httpx.Response(200))
     ) as http:
         with pytest.raises(SourceAuthenticationError, match="не настроены"):
+            await provider.token(http, "ref")
+
+
+async def test_auth_access_token_state_valid_expiring_expired_missing() -> None:
+    now = datetime(2026, 8, 1, 12, 0, tzinfo=UTC)
+    provider = AtiAuthProvider(
+        _CredStore(
+            {
+                ("valid", CRED_ACCESS_TOKEN): "valid-token-123456",
+                ("valid", CRED_TOKEN_EXPIRES_AT): "2026-08-03T12:00:00+00:00",
+                ("soon", CRED_ACCESS_TOKEN): "soon-token-123456",
+                ("soon", CRED_TOKEN_EXPIRES_AT): "2026-08-02T06:00:00+00:00",
+                ("expired", CRED_ACCESS_TOKEN): "expired-token-123456",
+                ("expired", CRED_TOKEN_EXPIRES_AT): "2026-08-01T01:00:00+00:00",
+            }
+        ),
+        clock=lambda: now,
+    )
+    assert provider.token_status("valid").state is AtiTokenState.VALID
+    assert provider.token_status("soon").state is AtiTokenState.EXPIRING_SOON
+    assert provider.token_status("expired").state is AtiTokenState.EXPIRED
+    assert provider.token_status("missing").state is AtiTokenState.MISSING
+
+
+async def test_auth_expired_access_token_is_not_used() -> None:
+    provider = AtiAuthProvider(
+        _CredStore(
+            {
+                ("ref", CRED_ACCESS_TOKEN): "expired-token-123456",
+                ("ref", CRED_TOKEN_EXPIRES_AT): "2026-08-01T01:00:00+00:00",
+            }
+        ),
+        clock=lambda: datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(500))
+    ) as http:
+        with pytest.raises(SourceAuthenticationError, match="истёк"):
             await provider.token(http, "ref")
 
 
@@ -254,6 +295,92 @@ async def test_client_filters_go_into_request_body() -> None:
     assert captured["cargo_types"] == ["мебель"]
 
 
+async def test_client_owned_loads_uses_official_get_endpoint() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        return httpx.Response(200, json=[{"CargoId": "official-1"}])
+
+    client = _client(handler)
+    loads = await client.search_cargo(
+        credentials_reference="ref",
+        max_results=10,
+        filters={"api_mode": "owned_loads"},
+    )
+    await client.aclose()
+    assert loads == [{"CargoId": "official-1"}]
+    assert calls == [("GET", LOADS_PATH)]
+    assert client.last_pages_requested == 1
+
+
+async def test_client_byboards_uses_official_carrier_endpoint() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        assert request.headers["Authorization"] == "Bearer live-token-123456"
+        return httpx.Response(200, json=[{"CargoId": "board-1"}, {"CargoId": "board-2"}])
+
+    client = _client(
+        handler,
+        _CredStore({("ati_main", CRED_ACCESS_TOKEN): "live-token-123456"}),
+    )
+    loads = await client.search_cargo(
+        credentials_reference="ati_main",
+        max_results=1,
+        filters={"api_mode": "byboards"},
+    )
+    await client.aclose()
+
+    assert loads == [{"CargoId": "board-1"}]
+    assert calls == [("GET", BYBOARDS_PATH)]
+    assert client.last_pages_requested == 1
+
+
+async def test_ati_source_does_not_call_api_with_expired_token() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json=[])
+
+    client = AtiClient(
+        _CredStore(
+            {
+                ("ati_main", CRED_ACCESS_TOKEN): "expired-token-123456",
+                ("ati_main", CRED_TOKEN_EXPIRES_AT): "2026-08-01T01:00:00+00:00",
+            }
+        ),
+        transport=httpx.MockTransport(handler),
+        auth=AtiAuthProvider(
+            _CredStore(
+                {
+                    ("ati_main", CRED_ACCESS_TOKEN): "expired-token-123456",
+                    ("ati_main", CRED_TOKEN_EXPIRES_AT): "2026-08-01T01:00:00+00:00",
+                }
+            ),
+            clock=lambda: datetime(2026, 8, 2, 12, 0, tzinfo=UTC),
+        ),
+    )
+    source = AtiSource(_CredStore(), client=client)
+    context = SourceContext(
+        logger=logging.getLogger("test"),
+        settings=lambda: AppSettings(),
+        configuration=SourceConfiguration.create(
+            "ati",
+            enabled=True,
+            credentials_reference="ati_main",
+            filters={"api_mode": "owned_loads"},
+        ),
+    )
+    with pytest.raises(SourceAuthenticationError):
+        await source.fetch(context)
+    await client.aclose()
+    assert calls == 0
+
+
 # ── Mapper и нормализация реальных форматов ──────────────────────────────────
 
 
@@ -297,6 +424,39 @@ def test_mapper_nested_real_payload_preserves_everything() -> None:
     assert cargo.pallet_count == 14
     assert cargo.payment_amount == Decimal(120000)
     assert cargo.loading_region == "Москва" and cargo.unloading_region == "Санкт-Петербург"
+
+
+def test_mapper_official_cargos_array_payload() -> None:
+    payload = {
+        "cargo_application_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+        "distance": 726,
+        "route": {
+            "loading": {"city_name": "Москва"},
+            "unloading": {"city_name": "Казань"},
+        },
+        "cargos": [
+            {
+                "name": "Автомобиль(ли)",
+                "weight": {"type": "tons", "quantity": 5.2},
+                "volume": {"quantity": 36},
+                "sizes": {
+                    "length": {"value": 6.2},
+                    "width": {"value": 2.45},
+                    "height": {"value": 2.5},
+                },
+                "packaging": {"quantity": 12},
+            }
+        ],
+        "TruePrice": 125000,
+    }
+    raw = AtiCargoMapper().map(payload)
+    assert raw.external_id == "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    assert raw.title == "Автомобиль(ли)"
+    assert raw.attributes["weight"] == "5.2 т"
+    assert raw.attributes["length"] == "6.2 м"
+    assert raw.attributes["width"] == "2.45 м"
+    assert raw.attributes["height"] == "2.5 м"
+    assert raw.attributes["price"] == "125000"
 
 
 def test_normalizer_real_ati_weight_formats() -> None:
@@ -377,6 +537,20 @@ class _History:
         self.entries.append(entry)
 
 
+class _ConfigRepo:
+    def __init__(self, configuration: SourceConfiguration) -> None:
+        self._configuration = configuration
+
+    def get(self, source_id: str) -> SourceConfiguration | None:
+        return self._configuration if source_id == self._configuration.source_id else None
+
+    def list_enabled(self) -> tuple[SourceConfiguration, ...]:
+        return (self._configuration,) if self._configuration.enabled else ()
+
+    def save(self, configuration: SourceConfiguration) -> None:
+        self._configuration = configuration
+
+
 def _runtime(bus: EventBus, sender: _Sender) -> SourceRuntime:
     client, _ = build_demo_ati_client()
     registry = SourceRegistry(bus)
@@ -438,6 +612,52 @@ async def test_source_without_credentials_fails_with_notification() -> None:
     assert sender.sent and "не удалось получить грузы" in sender.sent[0].title
 
 
+async def test_source_runtime_stops_ati_polling_when_token_expired() -> None:
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"loads": [{"id": "should-not-happen"}]})
+
+    creds = _CredStore(
+        {
+            ("ati_main", CRED_ACCESS_TOKEN): "expired-token-123456",
+            ("ati_main", CRED_TOKEN_EXPIRES_AT): "2026-08-01T01:00:00+00:00",
+        }
+    )
+    auth = AtiAuthProvider(creds, clock=lambda: datetime(2026, 8, 2, 12, 0, tzinfo=UTC))
+    client = AtiClient(creds, transport=httpx.MockTransport(handler), auth=auth)
+    registry = SourceRegistry(EventBus())
+    registry.register(AtiSource(creds, client=client))
+    sender = _Sender()
+    runtime = SourceRuntime(
+        registry=registry,
+        normalizer=CargoNormalizer(),
+        event_bus=EventBus(),
+        notifications=sender,
+        history=_History(),
+        settings_provider=AppSettings,
+        configurations=_ConfigRepo(
+            SourceConfiguration.create(
+                source_id="ati",
+                name="ATI Live",
+                enabled=True,
+                credentials_reference="ati_main",
+                filters={"api_mode": "owned_loads"},
+            )
+        ),
+    )
+
+    report = await runtime.run_source("ati", trace_id="expired-token-run")
+
+    assert not report.success
+    assert report.attempts == 0
+    assert report.error is not None and "истёк" in report.error
+    assert calls == 0
+    assert any("Токен ATI истёк" in notification.title for notification in sender.sent)
+
+
 # ── Полный конвейер: Mock ATI → Cargo → Matching → Notification ─────────────
 
 
@@ -492,7 +712,11 @@ async def test_full_pipeline_from_mock_ati_to_notification() -> None:
     result = pipeline.last_report
     assert result is not None
     assert result.received == 5 and result.new_count == 4 and result.duplicates == 1
+    assert result.prefilter_rejected == 0
     assert result.compatible == 3  # 20-тонник отсеян по совместимости
+    assert result.compatibility_rejected == 1
+    assert result.ranked_count == 3
+    assert result.notifications_created == 1
     assert result.best_route == "Москва → Санкт-Петербург"
     assert result.best_score > 0  # AI Score рассчитан
 

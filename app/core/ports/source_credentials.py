@@ -14,6 +14,9 @@ CRED_LOGIN = "login"
 CRED_PASSWORD = "password"
 CRED_API_KEY = "api_key"
 CRED_TOKEN = "token"
+CRED_CLIENT_ID = "client_id"
+CRED_ACCESS_TOKEN = "access_token"
+CRED_TOKEN_EXPIRES_AT = "token_expires_at"
 
 
 class SourceCredentialProvider(Protocol):

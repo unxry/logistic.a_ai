@@ -29,6 +29,8 @@ from app.core.models.scheduler import Interval, JobContext, JobRetryPolicy, JobS
 from app.core.models.settings import AppSettings
 from app.core.models.severity import Severity
 from app.core.models.sources import (
+    AtiTokenState,
+    AtiTokenStatus,
     SourceConfiguration,
     SourceContext,
     SourceHealth,
@@ -122,6 +124,21 @@ class SourceRuntime:
         logger.info("Источник «%s»: опрос начат", source_id)
         self._events.publish(SourceStartedEvent(source_id=source_id, trace_id=trace))
         started = perf_counter()
+
+        token_status = self._credential_status(source, configuration)
+        if token_status is not None:
+            if token_status.state is AtiTokenState.EXPIRED:
+                duration_ms = int((perf_counter() - started) * 1000)
+                await self._notify_ati_token_expired(spec, trace)
+                return await self._finish_failure(
+                    spec,
+                    trace,
+                    duration_ms,
+                    "ATI access_token истёк — обновите токен в настройках",
+                    0,
+                )
+            if token_status.state is AtiTokenState.EXPIRING_SOON:
+                await self._notify_ati_token_expiring(spec, trace)
 
         result, error, attempts = await self._fetch_with_policy(source, trace, configuration)
         duration_ms = int((perf_counter() - started) * 1000)
@@ -338,6 +355,18 @@ class SourceRuntime:
             self._limiters[spec.id] = limiter
         return limiter
 
+    @staticmethod
+    def _credential_status(
+        source: CargoSource, configuration: SourceConfiguration | None
+    ) -> AtiTokenStatus | None:
+        if configuration is None:
+            return None
+        status = getattr(source, "credential_status", None)
+        if not callable(status):
+            return None
+        value = status(configuration.credentials_reference)
+        return value if isinstance(value, AtiTokenStatus) else None
+
     # ── Здоровье, метрики, наблюдаемость ─────────────────────────────────────
 
     def _record_run(self, source_id: str, *, success: bool, duration_ms: int, items: int) -> None:
@@ -457,6 +486,26 @@ class SourceRuntime:
         await self._send_notification(
             title=f"Источник «{spec.name}»: превышен лимит запросов",
             body=f"Опрос задержан на {waited:.0f} с — проверьте интервал опроса.",
+            spec=spec,
+            trace=trace,
+        )
+
+    async def _notify_ati_token_expiring(self, spec: SourceSpec, trace: str) -> None:
+        if not self._cooldown.should_send(f"source-token-expiring:{spec.id}"):
+            return
+        await self._send_notification(
+            title="⚠️ Токен ATI истекает через 24 часа",
+            body="Обновите временный access_token ATI в настройках.",
+            spec=spec,
+            trace=trace,
+        )
+
+    async def _notify_ati_token_expired(self, spec: SourceSpec, trace: str) -> None:
+        if not self._cooldown.should_send(f"source-token-expired:{spec.id}"):
+            return
+        await self._send_notification(
+            title="🔴 Токен ATI истёк",
+            body="Обновите токен в настройках. ATI polling остановлен до обновления.",
             spec=spec,
             trace=trace,
         )

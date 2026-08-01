@@ -44,6 +44,10 @@ class PipelineReport:
     duplicates: int
     updated_count: int = 0
     compatible: int = 0
+    prefilter_rejected: int = 0
+    compatibility_rejected: int = 0
+    ranked_count: int = 0
+    notifications_created: int = 0
     best_cargo_id: str = ""
     best_route: str = ""
     best_score: int = 0
@@ -163,7 +167,12 @@ class RecommendationPipeline:
         query = CargoSearchQuery.create(vehicle.id)
         result = await self._matching.search(query, vehicle, trace_id=event.trace_id)
         compatible = result.compatible_matches
-        report = replace(report, compatible=len(compatible))
+        report = replace(
+            report,
+            compatible=len(compatible),
+            prefilter_rejected=result.prefiltered_out,
+            compatibility_rejected=len(result.matches) - len(compatible),
+        )
         if not compatible:
             self.last_report = report
             return report
@@ -182,6 +191,11 @@ class RecommendationPipeline:
             report = replace(
                 report, best_cargo_id=cargo.id, best_route=route, best_score=best.final_score
             )
+        report = replace(
+            report,
+            ranked_count=len(ranked),
+            notifications_created=1 if best is not None else 0,
+        )
         if self._on_ranked is not None and ranked:
             self._on_ranked(ranked)
         self.last_report = report
