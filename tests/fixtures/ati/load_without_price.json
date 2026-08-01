@@ -1,0 +1,16 @@
+{
+  "id": "ati-fix-2",
+  "cargo": {
+    "name": "Стройматериалы",
+    "weight": "3 т"
+  },
+  "loading": {
+    "city_name": "Москва"
+  },
+  "unloading": {
+    "city_name": "Тверь"
+  },
+  "payment": {},
+  "car_type": "тент",
+  "distance": 170
+}

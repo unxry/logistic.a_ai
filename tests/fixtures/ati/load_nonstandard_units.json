@@ -1,0 +1,18 @@
+{
+  "id": "ati-fix-4",
+  "cargo": {
+    "name": "Продукты",
+    "weight": "5.5 тонн",
+    "sizes": "620x245x250",
+    "volume": "38 м3"
+  },
+  "loading": {
+    "city_name": "москва"
+  },
+  "unloading": {
+    "city_name": "нижний новгород"
+  },
+  "payment": {
+    "rate_text": "120 000 руб"
+  }
+}

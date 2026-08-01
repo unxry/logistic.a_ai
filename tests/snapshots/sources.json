@@ -1,0 +1,47 @@
+[
+  {
+    "cargo_count": 542,
+    "consecutive_failures": 0,
+    "errors": "",
+    "id": "ati",
+    "last_sync": "5 мин назад",
+    "name": "ATI.SU",
+    "reliability": "отклик 850 мс · ошибки 2% · дубли 21%",
+    "status": {
+      "detail": "",
+      "label": "В сети",
+      "tone": "ok"
+    },
+    "throughput": "68 грузов/ч"
+  },
+  {
+    "cargo_count": 87,
+    "consecutive_failures": 4,
+    "errors": "HTTP 503: сервис временно недоступен",
+    "id": "ozon",
+    "last_sync": "42 мин назад",
+    "name": "Ozon Логистика",
+    "reliability": "отклик 2140 мс · ошибки 39% · дубли 5%",
+    "status": {
+      "detail": "",
+      "label": "Недоступен",
+      "tone": "error"
+    },
+    "throughput": "11 грузов/ч"
+  },
+  {
+    "cargo_count": 12,
+    "consecutive_failures": 0,
+    "errors": "",
+    "id": "csv",
+    "last_sync": "ещё не синхронизировался",
+    "name": "CSV-импорт",
+    "reliability": "",
+    "status": {
+      "detail": "",
+      "label": "Выключен",
+      "tone": "muted"
+    },
+    "throughput": ""
+  }
+]

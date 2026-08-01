@@ -1,0 +1,248 @@
+{
+  "active_vehicle": {
+    "dimensions": "620 × 245 × 250 см",
+    "id": "vehicle-man-tgl",
+    "name": "MAN TGL",
+    "summary": "Тент · 6 000 кг · 38 м³ · 14 паллет"
+  },
+  "analytics_summary": {
+    "average_profit": "82 500 ₽",
+    "average_score": "74.2",
+    "best_route": "Москва → Санкт-Петербург",
+    "matched_count": 38,
+    "potential_profit": "160 610 ₽",
+    "rejected_count": 17,
+    "today_found": 641,
+    "total_profit": "160 610 ₽"
+  },
+  "application_status": {
+    "detail": "Ozon Логистика: недоступен",
+    "label": "Работает с проблемами",
+    "tone": "warning"
+  },
+  "best_matches": [
+    {
+      "actions": [
+        {
+          "id": "open",
+          "label": "Открыть объявление",
+          "url": "https://ati.su/cargo/demo-1"
+        }
+      ],
+      "cargo_id": "cargo-spb",
+      "compatibility": 100,
+      "dimensions": "500 × 200 × 220 см",
+      "distance": "710 км",
+      "explanation": [
+        "Идеальная совместимость транспорта",
+        "Прибыль 85000 ₽ · 120 ₽/км",
+        "Ваше направление: Санкт-Петербург",
+        "Минимальный холостой пробег: загрузка в домашнем регионе",
+        "Быстрая магистральная трасса"
+      ],
+      "price": "120 000 ₽",
+      "profit": "85 000 ₽",
+      "profit_per_km": "120 ₽/км",
+      "route": "Москва → Санкт-Петербург",
+      "score": 98,
+      "weight": "5 000 кг",
+      "workflow_state": "Новый"
+    },
+    {
+      "actions": [
+        {
+          "id": "open",
+          "label": "Открыть объявление",
+          "url": "https://ati.su/cargo/demo-2"
+        }
+      ],
+      "cargo_id": "cargo-kazan",
+      "compatibility": 95,
+      "dimensions": "480 × 200 × 210 см",
+      "distance": "820 км",
+      "explanation": [
+        "Подходит по машине",
+        "Прибыль 49610 ₽ · 61 ₽/км",
+        "Минимальный холостой пробег: загрузка в домашнем регионе"
+      ],
+      "price": "90 000 ₽",
+      "profit": "49 610 ₽",
+      "profit_per_km": "61 ₽/км",
+      "route": "Москва → Казань",
+      "score": 80,
+      "weight": "5 500 кг",
+      "workflow_state": "Новый"
+    },
+    {
+      "actions": [],
+      "cargo_id": "cargo-tver",
+      "compatibility": 85,
+      "dimensions": "—",
+      "distance": "170 км",
+      "explanation": [
+        "Подходит по машине",
+        "Прибыль 26000 ₽ · 153 ₽/км",
+        "Комфортное плечо"
+      ],
+      "price": "35 000 ₽",
+      "profit": "26 000 ₽",
+      "profit_per_km": "153 ₽/км",
+      "route": "Москва → Тверь",
+      "score": 76,
+      "weight": "2 400 кг",
+      "workflow_state": "Новый"
+    }
+  ],
+  "favorite_matches": [
+    {
+      "actions": [
+        {
+          "id": "open",
+          "label": "Открыть объявление",
+          "url": "https://ati.su/cargo/demo-1"
+        }
+      ],
+      "cargo_id": "cargo-spb",
+      "compatibility": 0,
+      "dimensions": "—",
+      "distance": "—",
+      "explanation": [
+        "Сохранённый груз из локальной базы"
+      ],
+      "price": "—",
+      "profit": "—",
+      "profit_per_km": "",
+      "route": "Москва → Санкт-Петербург",
+      "score": 0,
+      "weight": "—",
+      "workflow_state": "Избранное"
+    },
+    {
+      "actions": [
+        {
+          "id": "open",
+          "label": "Открыть объявление",
+          "url": "https://ati.su/cargo/demo-2"
+        }
+      ],
+      "cargo_id": "cargo-kazan",
+      "compatibility": 0,
+      "dimensions": "—",
+      "distance": "—",
+      "explanation": [
+        "Сохранённый груз из локальной базы"
+      ],
+      "price": "—",
+      "profit": "—",
+      "profit_per_km": "",
+      "route": "Москва → Казань",
+      "score": 0,
+      "weight": "—",
+      "workflow_state": "Избранное"
+    }
+  ],
+  "notification_events": [
+    {
+      "details": "Открыто",
+      "kind": "route",
+      "severity": "success",
+      "source": "matching",
+      "time_label": "4 мин назад",
+      "title": "Москва → Санкт-Петербург · AI 98"
+    },
+    {
+      "details": "Не открыто",
+      "kind": "route",
+      "severity": "success",
+      "source": "matching",
+      "time_label": "19 мин назад",
+      "title": "Москва → Казань · AI 80"
+    }
+  ],
+  "recent_events": [
+    {
+      "details": "Москва → Санкт-Петербург · чистая прибыль 85 000 ₽",
+      "kind": "notification",
+      "severity": "success",
+      "source": "matching",
+      "time_label": "4 мин назад",
+      "title": "🚚 Лучший груз найден"
+    },
+    {
+      "details": "",
+      "kind": "source_event",
+      "severity": "info",
+      "source": "ati",
+      "time_label": "5 мин назад",
+      "title": "ATI.SU: получено 17 новых грузов"
+    },
+    {
+      "details": "HTTP 503: сервис временно недоступен",
+      "kind": "error",
+      "severity": "warning",
+      "source": "ozon",
+      "time_label": "42 мин назад",
+      "title": "⚠️ Ozon Логистика недоступен"
+    },
+    {
+      "details": "",
+      "kind": "system_event",
+      "severity": "info",
+      "source": "app",
+      "time_label": "3 ч назад",
+      "title": "LogistAI запущен"
+    }
+  ],
+  "sources_status": [
+    {
+      "cargo_count": 542,
+      "consecutive_failures": 0,
+      "errors": "",
+      "id": "ati",
+      "last_sync": "5 мин назад",
+      "name": "ATI.SU",
+      "reliability": "отклик 850 мс · ошибки 2% · дубли 21%",
+      "status": {
+        "detail": "",
+        "label": "В сети",
+        "tone": "ok"
+      },
+      "throughput": "68 грузов/ч"
+    },
+    {
+      "cargo_count": 87,
+      "consecutive_failures": 4,
+      "errors": "HTTP 503: сервис временно недоступен",
+      "id": "ozon",
+      "last_sync": "42 мин назад",
+      "name": "Ozon Логистика",
+      "reliability": "отклик 2140 мс · ошибки 39% · дубли 5%",
+      "status": {
+        "detail": "",
+        "label": "Недоступен",
+        "tone": "error"
+      },
+      "throughput": "11 грузов/ч"
+    },
+    {
+      "cargo_count": 12,
+      "consecutive_failures": 0,
+      "errors": "",
+      "id": "csv",
+      "last_sync": "ещё не синхронизировался",
+      "name": "CSV-импорт",
+      "reliability": "",
+      "status": {
+        "detail": "",
+        "label": "Выключен",
+        "tone": "muted"
+      },
+      "throughput": ""
+    }
+  ],
+  "telegram_status": {
+    "detail": "",
+    "label": "Подключён",
+    "tone": "ok"
+  }
+}

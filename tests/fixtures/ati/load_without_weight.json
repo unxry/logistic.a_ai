@@ -1,0 +1,15 @@
+{
+  "id": "ati-fix-3",
+  "cargo": {
+    "name": "Оборудование"
+  },
+  "loading": {
+    "city_name": "Казань"
+  },
+  "unloading": {
+    "city_name": "Москва"
+  },
+  "payment": {
+    "rate_text": "70 000 руб"
+  }
+}

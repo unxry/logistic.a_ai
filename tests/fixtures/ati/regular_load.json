@@ -1,0 +1,27 @@
+{
+  "id": "ati-fix-1",
+  "cargo": {
+    "name": "Мебель",
+    "weight": {
+      "quantity": 5,
+      "type": "tons"
+    },
+    "sizes": "6.2x2.45x2.5",
+    "volume": 38,
+    "pallets": 14
+  },
+  "loading": {
+    "city_name": "Москва",
+    "date": "2026-08-01"
+  },
+  "unloading": {
+    "city_name": "Санкт-Петербург",
+    "date_to": "2026-08-03"
+  },
+  "payment": {
+    "rate_sum": 120000
+  },
+  "car_type": "тент",
+  "distance": 710,
+  "url": "https://ati.su/cargo/fix-1"
+}

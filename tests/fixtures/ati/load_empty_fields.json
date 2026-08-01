@@ -1,0 +1,14 @@
+{
+  "id": "ati-fix-5",
+  "cargo": {
+    "name": "",
+    "weight": "",
+    "sizes": null
+  },
+  "loading": {
+    "city_name": ""
+  },
+  "unloading": {},
+  "payment": null,
+  "url": ""
+}

@@ -1,0 +1,73 @@
+[
+  {
+    "actions": [
+      {
+        "id": "open",
+        "label": "Открыть объявление",
+        "url": "https://ati.su/cargo/demo-1"
+      }
+    ],
+    "cargo_id": "cargo-spb",
+    "compatibility": 100,
+    "dimensions": "500 × 200 × 220 см",
+    "distance": "710 км",
+    "explanation": [
+      "Идеальная совместимость транспорта",
+      "Прибыль 85000 ₽ · 120 ₽/км",
+      "Ваше направление: Санкт-Петербург",
+      "Минимальный холостой пробег: загрузка в домашнем регионе",
+      "Быстрая магистральная трасса"
+    ],
+    "price": "120 000 ₽",
+    "profit": "85 000 ₽",
+    "profit_per_km": "120 ₽/км",
+    "route": "Москва → Санкт-Петербург",
+    "score": 98,
+    "weight": "5 000 кг",
+    "workflow_state": "Новый"
+  },
+  {
+    "actions": [
+      {
+        "id": "open",
+        "label": "Открыть объявление",
+        "url": "https://ati.su/cargo/demo-2"
+      }
+    ],
+    "cargo_id": "cargo-kazan",
+    "compatibility": 95,
+    "dimensions": "480 × 200 × 210 см",
+    "distance": "820 км",
+    "explanation": [
+      "Подходит по машине",
+      "Прибыль 49610 ₽ · 61 ₽/км",
+      "Минимальный холостой пробег: загрузка в домашнем регионе"
+    ],
+    "price": "90 000 ₽",
+    "profit": "49 610 ₽",
+    "profit_per_km": "61 ₽/км",
+    "route": "Москва → Казань",
+    "score": 80,
+    "weight": "5 500 кг",
+    "workflow_state": "Новый"
+  },
+  {
+    "actions": [],
+    "cargo_id": "cargo-tver",
+    "compatibility": 85,
+    "dimensions": "—",
+    "distance": "170 км",
+    "explanation": [
+      "Подходит по машине",
+      "Прибыль 26000 ₽ · 153 ₽/км",
+      "Комфортное плечо"
+    ],
+    "price": "35 000 ₽",
+    "profit": "26 000 ₽",
+    "profit_per_km": "153 ₽/км",
+    "route": "Москва → Тверь",
+    "score": 76,
+    "weight": "2 400 кг",
+    "workflow_state": "Новый"
+  }
+]

@@ -1,0 +1,161 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "logistai"
+description = "LogistAI — интеллектуальный помощник логиста для macOS"
+readme = "README.md"
+requires-python = ">=3.13"
+# Версия НЕ хардкодится: единственный источник — файл VERSION (см. [tool.hatch.version]).
+dynamic = ["version"]
+dependencies = [
+    "PySide6>=6.8",
+    "qasync>=0.27",
+    "httpx>=0.27",
+    "platformdirs>=4.2",
+    "keyring>=25.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.24",
+    "pytest-qt>=4.4",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "import-linter>=2.1",
+    "pre-commit>=4.0",
+]
+
+[tool.hatch.version]
+path = "VERSION"
+pattern = '(?P<version>\S+)'
+
+[tool.hatch.build.targets.wheel]
+packages = ["app"]
+
+# ── Архитектурные контракты (проверяются `lint-imports`, падают в CI) ─────────
+[tool.importlinter]
+root_package = "app"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Ядро (core) не зависит ни от чего в приложении"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = [
+    "app.buses",
+    "app.services",
+    "app.infrastructure",
+    "app.plugins",
+    "app.ui",
+    "app.container",
+    "app.bootstrap",
+]
+
+[[tool.importlinter.contracts]]
+name = "Шины (buses) зависят только от ядра"
+type = "forbidden"
+source_modules = ["app.buses"]
+forbidden_modules = [
+    "app.services",
+    "app.infrastructure",
+    "app.plugins",
+    "app.ui",
+    "app.container",
+    "app.bootstrap",
+]
+
+[[tool.importlinter.contracts]]
+name = "Сервисы не знают про инфраструктуру, UI и плагины"
+type = "forbidden"
+source_modules = ["app.services"]
+forbidden_modules = ["app.infrastructure", "app.plugins", "app.ui", "app.bootstrap"]
+
+[[tool.importlinter.contracts]]
+name = "Инфраструктура не знает про сервисы, UI и плагины"
+type = "forbidden"
+source_modules = ["app.infrastructure"]
+forbidden_modules = ["app.services", "app.ui", "app.plugins", "app.bootstrap"]
+
+[[tool.importlinter.contracts]]
+name = "UI не знает про инфраструктуру, плагины и контейнер"
+type = "forbidden"
+source_modules = ["app.ui"]
+forbidden_modules = ["app.infrastructure", "app.plugins", "app.container", "app.bootstrap"]
+
+[[tool.importlinter.contracts]]
+name = "ViewModel'и не знают Qt и конкретные слои (только ядро)"
+type = "forbidden"
+source_modules = ["app.ui.viewmodels"]
+forbidden_modules = [
+    "PySide6",
+    "app.services",
+    "app.infrastructure",
+    "app.buses",
+    "app.plugins",
+    "app.container",
+    "app.bootstrap",
+]
+
+[[tool.importlinter.contracts]]
+name = "Плагины зависят только от ядра и шин"
+type = "forbidden"
+source_modules = ["app.plugins"]
+forbidden_modules = [
+    "app.services",
+    "app.infrastructure",
+    "app.ui",
+    "app.container",
+    "app.bootstrap",
+]
+
+# ── Линтер и форматирование ───────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["."]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W", # pycodestyle / pyflakes
+    "I",           # isort
+    "N",           # pep8-naming
+    "UP",          # pyupgrade
+    "B",           # bugbear
+    "SIM",         # simplify
+    "C4",          # comprehensions
+    "RET",         # return
+    "RUF",         # ruff-специфичные
+]
+ignore = [
+    # Кириллица в докстрингах/комментариях — намеренно (русскоязычный проект),
+    # это не «ambiguous unicode».
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ── Типизация ─────────────────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["app"]
+
+[[tool.mypy.overrides]]
+module = ["PySide6.*", "qasync.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.ui.*"
+disallow_subclassing_any = false
+
+# ── Тесты ─────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"

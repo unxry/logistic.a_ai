@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "ui": {
+    "theme": "dark",
+    "autostart": false
+  },
+  "telegram": {
+    "enabled": true,
+    "chat_id": ""
+  },
+  "notifications": {
+    "enabled_channels": ["telegram", "macos_native"]
+  },
+  "history": {
+    "retention_days": 90
+  },
+  "scheduler": {
+    "telegram_health_check_minutes": 5
+  },
+  "monitoring": {
+    "refresh_interval_seconds": 60
+  },
+  "vehicle": {
+    "profiles": [],
+    "active_profile_id": null
+  },
+  "routing": {
+    "fuel_consumption_l_per_100km": 30,
+    "fuel_price_per_liter": 70,
+    "toll_cost_per_km": 9,
+    "maintenance_cost_per_km": 10,
+    "driver_cost_per_hour": 660,
+    "average_speed_kmh": 71.0
+  },
+  "matching": {
+    "compatibility": 0.3,
+    "profit": 0.3,
+    "route": 0.2,
+    "preferences": 0.1,
+    "freshness": 0.1
+  }
+}

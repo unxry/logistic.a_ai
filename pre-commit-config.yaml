@@ -1,0 +1,48 @@
+# Pre-commit хуки LogistAI.
+#
+# ВАЖНО: стандартное имя файла — «.pre-commit-config.yaml» (с точкой).
+# После клонирования выполните один раз:
+#     mv pre-commit-config.yaml .pre-commit-config.yaml
+#     uv run pre-commit install
+# либо работайте с явным путём: uv run pre-commit install -c pre-commit-config.yaml
+# (файл поставляется без точки из-за ограничений среды, в которой он сгенерирован).
+#
+# Все хуки исполняются через локальное окружение uv (.venv), чтобы версии
+# инструментов ВСЕГДА совпадали с uv.lock — без дублирования пинов.
+# Обходить хуки (--no-verify) запрещено правилами проекта — см. CONTRIBUTING.md.
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+
+      - id: ruff-check
+        name: ruff check (--fix)
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: mypy (strict)
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: import-linter
+        name: архитектурные контракты (import-linter)
+        entry: uv run lint-imports
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: pytest
+        name: pytest (быстрый smoke-прогон)
+        entry: uv run pytest -q -x
+        language: system
+        types: [python]
+        pass_filenames: false

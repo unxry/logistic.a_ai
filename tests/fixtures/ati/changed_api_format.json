@@ -1,0 +1,24 @@
+{
+  "load_uuid": "ati-fix-6",
+  "freight": {
+    "caption": "Новый формат ATI",
+    "mass_kg": 4000
+  },
+  "route_info": {
+    "start": "Москва",
+    "finish": "Воронеж"
+  },
+  "money": {
+    "amount": 55000,
+    "currency": "RUB"
+  },
+  "extra": {
+    "nested": {
+      "deep": [
+        1,
+        2,
+        3
+      ]
+    }
+  }
+}
