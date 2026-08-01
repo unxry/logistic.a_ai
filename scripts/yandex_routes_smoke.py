@@ -1,38 +1,28 @@
-"""Live Yandex Truck Routing smoke.
-
-Run manually:
-    YANDEX_ROUTER_API_KEY="..." uv run python scripts/yandex_routes_smoke.py
-
-The key is read from env only and is never printed.
-"""
+"""Live Yandex Truck Routing smoke using the production route chain."""
 
 from __future__ import annotations
 
 import asyncio
 import os
-from decimal import Decimal
 
-from app.core.models.logistics.cargo import Cargo
+from app.bootstrap import build_container
+from app.container import AppContainer
+from app.core.events import RouteCacheHit, RouteFallbackUsed
 from app.core.models.logistics.vehicle_profile import BodyType, VehicleProfile, VehicleType
 from app.core.models.routes import RouteRequest, RouteVehicleParameters
-from app.infrastructure.routes import (
-    StaticGeocodingProvider,
-    YandexRoutesClient,
-    YandexTruckRouteProvider,
+from app.core.ports.secret_store import YANDEX_ROUTER_API_KEY_KEY
+from app.infrastructure.settings.secret_store import KeyringSecretStore
+
+ROUTES: tuple[tuple[str, str], ...] = (
+    ("Москва", "Санкт-Петербург"),
+    ("Москва", "Казань"),
+    ("Москва", "Нижний Новгород"),
 )
-from app.services.matching import CargoProfitCalculator
-from app.services.routes import RouteCostCalculator
 
 
-async def main() -> int:
-    """Call Yandex Router API once and print a safe smoke report."""
-    api_key = os.environ.get("YANDEX_ROUTER_API_KEY")
-    if not api_key:
-        print("YANDEX_ROUTER_API_KEY is not set")
-        return 2
-
-    vehicle = VehicleProfile.create(
-        name="12t smoke truck",
+def _vehicle() -> VehicleProfile:
+    return VehicleProfile.create(
+        name="12t live truck",
         vehicle_type=VehicleType.TRUCK,
         body_type=BodyType.TENT,
         cargo_capacity_kg=12_000,
@@ -44,44 +34,85 @@ async def main() -> int:
         max_weight_kg=18_000,
         empty_weight_kg=6_000,
     )
+
+
+async def _close(container: AppContainer) -> None:
+    await container.ati_client.aclose()
+    await container.notification_service.aclose()
+    container.database.close()
+
+
+async def _run_once(container: AppContainer, origin: str, destination: str) -> None:
     request = RouteRequest(
-        origin="Москва",
-        destination="Казань",
-        origin_point=await StaticGeocodingProvider().geocode("Москва"),
-        destination_point=await StaticGeocodingProvider().geocode("Казань"),
-        vehicle=RouteVehicleParameters.from_profile(vehicle),
+        origin=origin,
+        destination=destination,
+        vehicle=RouteVehicleParameters.from_profile(_vehicle()),
         traffic_enabled=True,
         alternatives=1,
     )
-    provider = YandexTruckRouteProvider(
-        client=YandexRoutesClient(api_key_provider=lambda: api_key),
-        geocoder=StaticGeocodingProvider(),
+    estimate = await container.route_service.estimate(
+        origin,
+        destination,
+        trace_id="yandex-routes-smoke",
+        request=request,
     )
-    estimate = await provider.calculate_route("Москва", "Казань", request=request)
     if estimate is None:
-        print("Yandex truck route: no result")
-        return 1
+        print(f"{origin} → {destination}: no route")
+        raise SystemExit(1)
+    print(f"{origin} → {destination}")
+    print(f"Provider: {estimate.provider_label}")
+    print(f"Mode: {'truck' if estimate.supports_truck_restrictions else 'approximate'}")
+    print(f"Distance: {estimate.distance_km:.0f} km")
+    print(f"Duration: {estimate.duration_hours:.2f} h")
+    tolls = "yes" if estimate.has_tolls else "no" if estimate.has_tolls is False else "unknown"
+    print(f"Tolls: {tolls}")
+    print(f"Truck restrictions supported: {estimate.supports_truck_restrictions}")
+    print(f"Confidence: {estimate.confidence_score}")
+    if estimate.is_fallback:
+        print("Approximate route")
+        print("Truck restrictions not included")
+    print()
 
-    enriched = RouteCostCalculator().enrich(estimate)
-    cargo = Cargo(
-        id="smoke-yandex-route",
-        source_id="smoke",
-        title="Москва → Казань",
-        loading_region="Москва",
-        unloading_region="Казань",
-        payment_amount=Decimal("120000"),
-        distance_km=enriched.distance_km,
-    )
-    analysis = CargoProfitCalculator().analyze(cargo, enriched)
-    if analysis is None:
-        print("Net profit recalculation failed")
-        return 1
-    print("Yandex truck route: live success")
-    print(f"Distance: {enriched.distance_km:.0f} km")
-    print(f"Duration: {enriched.duration_hours:.2f} h")
-    print(f"Tolls: {'yes' if enriched.has_tolls else 'no'}")
-    print(f"Confidence: {enriched.confidence_score}")
-    print(f"Net profit recalculated: {analysis.net_profit} ₽")
+
+async def main() -> int:
+    """Call Yandex through LogistAI production routing without printing the key."""
+    store = KeyringSecretStore()
+    env_key = os.environ.get("YANDEX_ROUTER_API_KEY")
+    if env_key and not store.get(YANDEX_ROUTER_API_KEY_KEY):
+        store.set(YANDEX_ROUTER_API_KEY_KEY, env_key)
+    if not store.get(YANDEX_ROUTER_API_KEY_KEY):
+        print("Yandex Router key is not stored in Keychain")
+        return 2
+
+    cache_hits = 0
+    fallbacks = 0
+    container = build_container()
+
+    def on_cache(_: RouteCacheHit) -> None:
+        nonlocal cache_hits
+        cache_hits += 1
+
+    def on_fallback(_: RouteFallbackUsed) -> None:
+        nonlocal fallbacks
+        fallbacks += 1
+
+    container.event_bus.subscribe(RouteCacheHit, on_cache)
+    container.event_bus.subscribe(RouteFallbackUsed, on_fallback)
+    try:
+        for origin, destination in ROUTES:
+            await _run_once(container, origin, destination)
+    finally:
+        await _close(container)
+
+    second = build_container()
+    second.event_bus.subscribe(RouteCacheHit, on_cache)
+    try:
+        await _run_once(second, ROUTES[0][0], ROUTES[0][1])
+    finally:
+        await _close(second)
+
+    print(f"cache_hit={cache_hits > 0}")
+    print(f"fallbacks={fallbacks}")
     return 0
 
 

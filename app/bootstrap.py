@@ -37,6 +37,7 @@ from app.core.models.logistics.compatibility import BasicCompatibilityChecker
 from app.core.models.logistics.driver_profile import DriverProfile
 from app.core.models.logistics.vehicle_profile import BodyType, VehicleProfile, VehicleType
 from app.core.models.routes import RouteCachePolicy, RouteRequest, RouteVehicleParameters
+from app.core.ports.secret_store import YANDEX_ROUTER_API_KEY_KEY
 from app.core.ports.source_credentials import CRED_API_KEY
 from app.infrastructure.logging.setup import setup_logging
 from app.infrastructure.notifications.macos import MacOSNotificationChannel
@@ -253,6 +254,7 @@ def build_container(
     route_cache_repository = SqliteRouteCacheRepository(database)
     route_provider = _build_route_provider(
         settings_service=settings_service,
+        secret_store=secret_store,
         source_credentials=source_credentials,
         cache=route_cache_repository,
         event_bus=event_bus,
@@ -442,6 +444,7 @@ def build_container(
 def _build_route_provider(
     *,
     settings_service: SettingsService,
+    secret_store: KeyringSecretStore,
     source_credentials: KeychainSourceCredentialProvider,
     cache: SqliteRouteCacheRepository,
     event_bus: EventBus,
@@ -451,7 +454,9 @@ def _build_route_provider(
     routing = settings_service.current.routing
 
     def yandex_api_key() -> str | None:
-        return source_credentials.get(routing.yandex_credentials_reference, CRED_API_KEY)
+        return secret_store.get(YANDEX_ROUTER_API_KEY_KEY) or source_credentials.get(
+            routing.yandex_credentials_reference, CRED_API_KEY
+        )
 
     static_geocoder = StaticGeocodingProvider()
     if demo_routes:

@@ -9,9 +9,10 @@ No demo fixtures are used here.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from app.bootstrap import build_container
 from app.container import AppContainer
@@ -20,11 +21,29 @@ from app.core.events import NotificationDelivered, NotificationFailed
 from app.core.models.notification import NotificationCategory
 from app.core.models.notification_builder import NotificationBuilder
 from app.core.models.severity import Severity
-from app.core.models.sources import AtiPipelineReport, AtiTokenState
+from app.core.models.sources import AtiPipelineReport, AtiTokenState, SourceConfiguration
+from app.infrastructure.sources.config_repository import JsonSourceConfigurationRepository
+from app.infrastructure.system.paths import PlatformPaths
 
 
 async def main() -> int:
     """Run one real ATI poll and one Telegram delivery."""
+    parser = argparse.ArgumentParser()
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--no-filters", action="store_true")
+    group.add_argument("--minimal-filters", action="store_true")
+    group.add_argument("--vehicle-filters", action="store_true")
+    args = parser.parse_args()
+    filter_mode = (
+        "no-filters"
+        if args.no_filters
+        else "minimal-filters"
+        if args.minimal_filters
+        else "vehicle-filters"
+        if args.vehicle_filters
+        else "configured"
+    )
+    original_config = _apply_filter_mode(filter_mode)
     container = build_container()
     telegram_sent = 0
     telegram_failed = 0
@@ -83,7 +102,7 @@ async def main() -> int:
             best_cargo_id=pipeline.best_cargo_id if pipeline is not None else "",
         )
         _save_report(container, live_report)
-        _print_report(live_report)
+        _print_report(live_report, filter_mode=filter_mode)
         if not report.success:
             return 1
         if live_report.raw_received <= 0:
@@ -92,10 +111,37 @@ async def main() -> int:
             return 1
         return 0
     finally:
+        _restore_config(original_config)
         await container.telegram_bot.stop()
         await container.ati_client.aclose()
         await container.notification_service.aclose()
         container.database.close()
+
+
+def _apply_filter_mode(filter_mode: str) -> SourceConfiguration | None:
+    paths = PlatformPaths()
+    repository = JsonSourceConfigurationRepository(paths.config_dir / "sources.json")
+    current = repository.get("ati")
+    if current is None:
+        return None
+    if filter_mode == "configured":
+        return current
+    filters = {"api_mode": "byboards"}
+    if filter_mode == "minimal-filters":
+        filters["max_weight"] = "12000"
+    if filter_mode == "vehicle-filters":
+        filters.update({"max_weight": "6000", "cargo_types": "тент"})
+    repository.save(
+        replace(current, filters=filters, enabled=True, credentials_reference="ati_main")
+    )
+    return current
+
+
+def _restore_config(original: SourceConfiguration | None) -> None:
+    if original is None:
+        return
+    paths = PlatformPaths()
+    JsonSourceConfigurationRepository(paths.config_dir / "sources.json").save(original)
 
 
 async def _send_test_notification(container: AppContainer) -> None:
@@ -121,9 +167,11 @@ def _save_report(container: AppContainer, report: AtiPipelineReport) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def _print_report(report: AtiPipelineReport) -> None:
+def _print_report(report: AtiPipelineReport, *, filter_mode: str) -> None:
     print("ATI LIVE CONNECTED")
     print("Account: authenticated")
+    print("Endpoint: GET /v1.0/loads/search/byboards")
+    print(f"Filter mode: {filter_mode}")
     print(f"Pages: {report.pages_requested}")
     print(f"Received: {report.raw_received}")
     print(f"Matched: {report.matched}")
@@ -143,6 +191,14 @@ def _print_report(report: AtiPipelineReport) -> None:
     print(f"Отправлено в Telegram: {report.telegram_sent}")
     print(f"Ошибок Telegram: {report.telegram_failed}")
     print(f"Время: {report.duration_seconds:.2f} сек")
+    if report.raw_received <= 0:
+        print()
+        print("Reason:")
+        print("- official ATI byboards endpoint returned zero loads")
+        print("- carrier API exposes personal boards, not the general ATI marketplace")
+        print(
+            "- run scripts/ati_access_diagnostics.py to distinguish empty board vs no board access"
+        )
 
 
 if __name__ == "__main__":

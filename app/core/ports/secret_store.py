@@ -8,6 +8,7 @@ from typing import Protocol
 # а не «магические» строки.
 TELEGRAM_BOT_TOKEN_KEY = "telegram_bot_token"
 TELEGRAM_CHAT_ID_KEY = "telegram_chat_id"
+YANDEX_ROUTER_API_KEY_KEY = "routing:yandex:api_key"
 
 
 class SecretStore(Protocol):

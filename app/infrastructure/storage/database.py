@@ -178,6 +178,19 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
         CREATE INDEX idx_geocoding_cache_expires ON geocoding_cache(expires_at);
         """,
     ),
+    (
+        6,
+        """
+        CREATE TABLE live_pipeline_reports (
+            trace_id TEXT PRIMARY KEY,
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL,
+            report_json TEXT NOT NULL
+        );
+        CREATE INDEX idx_live_pipeline_reports_started
+            ON live_pipeline_reports(started_at DESC);
+        """,
+    ),
 )
 
 

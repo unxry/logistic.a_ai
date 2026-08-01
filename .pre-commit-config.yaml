@@ -2,10 +2,7 @@
 #
 # ВАЖНО: стандартное имя файла — «.pre-commit-config.yaml» (с точкой).
 # После клонирования выполните один раз:
-#     mv pre-commit-config.yaml .pre-commit-config.yaml
 #     uv run pre-commit install
-# либо работайте с явным путём: uv run pre-commit install -c pre-commit-config.yaml
-# (файл поставляется без точки из-за ограничений среды, в которой он сгенерирован).
 #
 # Все хуки исполняются через локальное окружение uv (.venv), чтобы версии
 # инструментов ВСЕГДА совпадали с uv.lock — без дублирования пинов.
@@ -46,3 +43,9 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+
+      - id: detect-secrets
+        name: detect-secrets
+        entry: uv run detect-secrets-hook --baseline .secrets.baseline --exclude-files '^uv\.lock$'
+        language: system
+        pass_filenames: true

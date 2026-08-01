@@ -43,6 +43,7 @@
 | 9.9 | Dispatcher Workspace: lifecycle статусов грузов, избранное, ignore blacklist, notification history, menu bar, autostart, SQLite cargo history, dispatcher analytics | ✅ |
 | 10.0 | Production Route Providers: Yandex Truck Routing, OSRM fallback, geocoding, SQLite route cache, fallback observability, demo/live route smoke | ✅ |
 | 10.1 | Real ATI Live Validation + Telegram E2E: Keychain-only ATI/Telegram credentials, token expiry guard, official `byboards`/own-loads endpoints, live pipeline report, Telegram smoke | ◐ |
+| 10.2 | Full Live ATI Commissioning: access diagnostics, boards audit, live E2E report, detect-secrets gate, explicit “no market access” outcome when API returns zero loads | ◐ |
 
 ## v0.4 — распространение (этап 10)
 

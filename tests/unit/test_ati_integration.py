@@ -27,7 +27,13 @@ from app.core.models.sources import AtiTokenState, SourceConfiguration, SourceCo
 from app.core.ports.source_credentials import CRED_ACCESS_TOKEN, CRED_TOKEN_EXPIRES_AT
 from app.infrastructure.routes import MockRouteProvider
 from app.infrastructure.sources.ati import AtiAuthProvider, AtiCargoMapper, AtiClient, AtiSource
-from app.infrastructure.sources.ati.client import BYBOARDS_PATH, LOADS_PATH
+from app.infrastructure.sources.ati.client import (
+    BOARDS_CAN_VIEW_PATH,
+    BOARDS_MY_PATH,
+    BOARDS_PARTICIPATING_PATH,
+    BYBOARDS_PATH,
+    LOADS_PATH,
+)
 from app.infrastructure.sources.ati.demo import (
     DEMO_CREDENTIALS_REFERENCE,
     DemoAtiConfigurationRepository,
@@ -336,6 +342,35 @@ async def test_client_byboards_uses_official_carrier_endpoint() -> None:
     assert loads == [{"CargoId": "board-1"}]
     assert calls == [("GET", BYBOARDS_PATH)]
     assert client.last_pages_requested == 1
+
+
+async def test_client_board_diagnostics_use_official_endpoints() -> None:
+    calls: list[tuple[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append((request.method, request.url.path))
+        if request.url.path == BOARDS_CAN_VIEW_PATH:
+            return httpx.Response(200, json=[{"id": "507f1f77bcf86cd799439011"}])
+        if request.url.path == BOARDS_MY_PATH:
+            return httpx.Response(200, json=["507f1f77bcf86cd799439012"])
+        if request.url.path == BOARDS_PARTICIPATING_PATH:
+            return httpx.Response(200, json=["507f1f77bcf86cd799439013"])
+        return httpx.Response(404)
+
+    client = _client(handler)
+    can_view = await client.get_boards_can_view(credentials_reference="ref")
+    my_ids = await client.get_my_board_ids(credentials_reference="ref")
+    participating_ids = await client.get_participating_board_ids(credentials_reference="ref")
+    await client.aclose()
+
+    assert can_view == [{"id": "507f1f77bcf86cd799439011"}]
+    assert my_ids == ["507f1f77bcf86cd799439012"]
+    assert participating_ids == ["507f1f77bcf86cd799439013"]
+    assert calls == [
+        ("GET", BOARDS_CAN_VIEW_PATH),
+        ("GET", BOARDS_MY_PATH),
+        ("GET", BOARDS_PARTICIPATING_PATH),
+    ]
 
 
 async def test_ati_source_does_not_call_api_with_expired_token() -> None:

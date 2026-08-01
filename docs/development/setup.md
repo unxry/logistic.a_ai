@@ -11,7 +11,6 @@
 ```bash
 git clone <репозиторий> && cd LogistAI
 uv sync                                            # Python 3.13 + зависимости (+dev)
-mv pre-commit-config.yaml .pre-commit-config.yaml  # однократно (см. примечание в файле)
 uv run pre-commit install                          # git-хуки — обязательно
 ```
 
@@ -44,5 +43,6 @@ UI-тесты выполняются offscreen (`QT_QPA_PLATFORM=offscreen` ст
 ## CI
 
 GitHub Actions (`.github/workflows/ci.yml`) на каждый push и PR:
-Linux — формат, линтер, mypy, import-linter, pytest; macOS — pytest.
+Linux — формат, линтер, mypy, import-linter, pytest, pre-commit,
+detect-secrets; macOS — pytest.
 Красный CI не мержится.

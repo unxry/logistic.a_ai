@@ -33,6 +33,9 @@ SEARCH_PATH = "/v1.0/loads/search"
 LOADS_PATH = "/v1.0/loads"
 BYBOARDS_PATH = "/v1.0/loads/search/byboards"
 LOAD_PATH = "/v1.0/loads/{load_id}"
+BOARDS_CAN_VIEW_PATH = "/v2/boards/public/boards/canView"
+BOARDS_MY_PATH = "/v2/boards/public/boards/my"
+BOARDS_PARTICIPATING_PATH = "/v2/boards/public/boards/participating"
 
 _TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
 _PER_PAGE = 50
@@ -116,6 +119,21 @@ class AtiClient:
         logger.info("ATI: поиск вернул %d грузов (страниц: %d)", len(loads[:max_results]), page - 1)
         return loads[:max_results]
 
+    async def get_boards_can_view(self, *, credentials_reference: str) -> list[dict[str, Any]]:
+        """Площадки, на которых token/contact может видеть грузы."""
+        payload = await self._request("GET", BOARDS_CAN_VIEW_PATH, credentials_reference)
+        return self._extract_objects(payload)
+
+    async def get_my_board_ids(self, *, credentials_reference: str) -> list[str]:
+        """ID площадок, созданных текущим участником ATI."""
+        payload = await self._request("GET", BOARDS_MY_PATH, credentials_reference)
+        return self._extract_ids(payload)
+
+    async def get_participating_board_ids(self, *, credentials_reference: str) -> list[str]:
+        """ID площадок, где текущий участник состоит."""
+        payload = await self._request("GET", BOARDS_PARTICIPATING_PATH, credentials_reference)
+        return self._extract_ids(payload)
+
     async def get_load(self, load_id: str, *, credentials_reference: str) -> dict[str, Any] | None:
         """Детали одного груза; ``None`` — груз не найден (404)."""
         try:
@@ -154,6 +172,7 @@ class AtiClient:
         credentials_reference: str,
         *,
         json: Mapping[str, Any] | None = None,
+        params: Mapping[str, str] | None = None,
         _retry_auth: bool = True,
     ) -> Any:
         client = self._http()
@@ -164,6 +183,7 @@ class AtiClient:
                 response = await client.request(
                     method,
                     path,
+                    params=params,
                     json=json,
                     headers={"Authorization": f"Bearer {token}"},
                 )
@@ -178,7 +198,12 @@ class AtiClient:
                     # Токен протух: инвалидировать и повторить ОДИН раз с новым.
                     self._auth.invalidate(credentials_reference)
                     return await self._request(
-                        method, path, credentials_reference, json=json, _retry_auth=False
+                        method,
+                        path,
+                        credentials_reference,
+                        json=json,
+                        params=params,
+                        _retry_auth=False,
                     )
                 if response.status_code >= 500:
                     last_error = SourceUnavailableError(f"ATI HTTP {response.status_code}")
@@ -255,11 +280,34 @@ class AtiClient:
     @staticmethod
     def _extract_loads(payload: Any) -> list[dict[str, Any]]:
         """Достать список грузов из ответа (loads / items / голый список)."""
+        return AtiClient._extract_objects(payload, keys=("loads", "items", "results"))
+
+    @staticmethod
+    def _extract_objects(
+        payload: Any, *, keys: tuple[str, ...] = ("boards", "items", "results")
+    ) -> list[dict[str, Any]]:
+        """Достать список объектов из ответа по типовым ключам или из голого списка."""
         if isinstance(payload, list):
             return [item for item in payload if isinstance(item, dict)]
         if isinstance(payload, dict):
-            for key in ("loads", "items", "results"):
+            for key in keys:
                 value = payload.get(key)
                 if isinstance(value, list):
                     return [item for item in value if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _extract_ids(payload: Any) -> list[str]:
+        """Достать список строковых ID из ответа ATI."""
+        if isinstance(payload, list):
+            return [str(item) for item in payload if item not in (None, "")]
+        if isinstance(payload, dict):
+            for key in ("ids", "boards", "items", "results"):
+                value = payload.get(key)
+                if isinstance(value, list):
+                    return [
+                        str(item if not isinstance(item, Mapping) else item.get("id", ""))
+                        for item in value
+                        if item not in (None, "")
+                    ]
         return []

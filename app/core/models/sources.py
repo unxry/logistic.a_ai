@@ -91,6 +91,39 @@ class AtiPipelineReport:
 
 
 @dataclass(frozen=True, slots=True)
+class LivePipelineReport:
+    """Commissioning-отчёт полного live E2E без секретов и персональных данных."""
+
+    trace_id: str
+    started_at: datetime
+    finished_at: datetime
+    ati_authenticated: bool = False
+    ati_endpoint: str = ""
+    ati_board_id_masked: str = ""
+    ati_pages: int = 0
+    raw_received: int = 0
+    mapped: int = 0
+    normalized: int = 0
+    invalid: int = 0
+    duplicates: int = 0
+    updated: int = 0
+    prefilter_rejected: int = 0
+    compatibility_rejected: int = 0
+    routes_requested: int = 0
+    route_cache_hits: int = 0
+    route_fallbacks: int = 0
+    matched: int = 0
+    best_cargo_id: str = ""
+    best_score: int = 0
+    best_net_profit: str = ""
+    notifications_created: int = 0
+    telegram_sent: int = 0
+    telegram_failed: int = 0
+    duration_ms: int = 0
+    reason: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class SourceCapabilities:
     """Возможности источника (Search Engine поймёт доступные фильтры)."""
 

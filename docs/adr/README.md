@@ -36,3 +36,5 @@
 | [0025](0025-production-telegram.md) | Production Telegram: бот, шаблоны, inline-кнопки | Принято |
 | [0026](0026-premium-ui-polish.md) | Премиальный полиш UI: двойная тема, living-motion | Принято |
 | [0027](0027-production-route-providers.md) | Production Route Providers: Yandex Truck + OSRM fallback | Принято |
+| [0028](0028-ati-live-validation-and-telegram-e2e.md) | ATI Live Validation and Telegram End-to-End | Принято |
+| [0029](0029-full-live-ati-commissioning.md) | Full Live ATI Commissioning | Принято |

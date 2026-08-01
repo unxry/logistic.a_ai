@@ -64,6 +64,7 @@ Linux (полный набор проверок) + macOS (тесты на цел
 2. **Telegram credentials.** Сохраните Bot Token и Chat ID так же через Keychain:
 
    ```bash
+   uv run python scripts/configure_live_credentials.py  # единый ATI+Telegram+Yandex setup
    uv run python scripts/store_telegram_credentials.py
    uv run python scripts/telegram_smoke.py
    ```
@@ -102,7 +103,9 @@ Linux (полный набор проверок) + macOS (тесты на цел
 Live-проверка без раскрытия секретов:
 
 ```bash
+uv run python scripts/ati_access_diagnostics.py
 uv run python scripts/ati_live_smoke.py
+uv run python scripts/live_end_to_end.py --dry-run
 ```
 
 Проверить весь конвейер без ключей и сети:
