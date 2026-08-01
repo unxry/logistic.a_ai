@@ -7,10 +7,12 @@ without starting live polling or Telegram.
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import logging
 import sys
+import time
 from contextlib import redirect_stderr
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -58,6 +60,13 @@ class UiAuditReport:
     qt_warnings: int
     invalid_qobjects: int
     unhandled_asyncio_tasks: int
+    stress_enabled: bool
+    stress_duration_seconds: int
+    stress_iterations: int
+    hover_moves: int
+    theme_switches: int
+    sheet_cycles: int
+    close_reopen_cycles: int
 
 
 class _RuntimeLog:
@@ -80,6 +89,15 @@ class _QtLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         self._sink.write(self.format(record) + "\n")
+
+
+@dataclass(slots=True)
+class _StressStats:
+    iterations: int = 0
+    hover_moves: int = 0
+    theme_switches: int = 0
+    sheet_cycles: int = 0
+    close_reopen_cycles: int = 0
 
 
 async def _refresh(window: MainWindow, container: _ContainerLike) -> None:
@@ -114,14 +132,17 @@ def _capture_page(window: MainWindow, theme: Theme, page_id: str) -> Path:
     return _capture_current(window, theme, page_id)
 
 
-def _exercise_hover(widget: QWidget) -> None:
-    for child in widget.findChildren(QWidget)[:80]:
+def _exercise_hover(widget: QWidget, *, limit: int = 80) -> int:
+    moves = 0
+    for child in widget.findChildren(QWidget)[:limit]:
         if not shiboken6.isValid(child) or not child.isVisible():
             continue
         QTest.mouseMove(child, child.rect().center())
         child.update()
         QTest.qWait(1)
+        moves += 1
     _process_events()
+    return moves
 
 
 def _open_modal_and_palette(window: MainWindow, theme: Theme, screenshots: list[Path]) -> None:
@@ -138,7 +159,63 @@ def _open_modal_and_palette(window: MainWindow, theme: Theme, screenshots: list[
     _process_events(40)
 
 
-def _run_qt_audit(runtime_log: _RuntimeLog) -> UiAuditReport:
+def _exercise_ai_sheet(window: MainWindow) -> None:
+    window._explain_cargo(mock_best_matches()[0])
+    _process_events(tokens.DURATION_ENTER + 40)
+    window.modal.close_overlay()
+    _process_events(40)
+
+
+def _run_stress(window: MainWindow, manager: ThemeManager, duration_seconds: int) -> _StressStats:
+    stats = _StressStats()
+    pages = tuple(PAGES)
+    deadline = time.monotonic() + duration_seconds
+    while time.monotonic() < deadline or not _stress_minimums_met(stats):
+        page_id = pages[stats.iterations % len(pages)]
+        window.show_page(page_id)
+        _process_events(80)
+        stats.hover_moves += _exercise_hover(window, limit=12)
+
+        if stats.theme_switches < 20 or stats.iterations % 7 == 0:
+            theme = Theme.DARK if stats.theme_switches % 2 == 0 else Theme.LIGHT
+            manager.apply(theme, animated=True)
+            stats.theme_switches += 1
+            _process_events(tokens.DURATION_BASE + 120)
+
+        if stats.sheet_cycles < 10 or stats.iterations % 11 == 0:
+            _exercise_ai_sheet(window)
+            stats.sheet_cycles += 1
+
+        if stats.close_reopen_cycles < 10 or stats.iterations % 17 == 0:
+            window.close()
+            _process_events(80)
+            window.show()
+            _process_events(tokens.DURATION_BASE + 80)
+            stats.close_reopen_cycles += 1
+
+        width = 1120 if stats.iterations % 2 == 0 else 1440
+        height = 720 if stats.iterations % 2 == 0 else 900
+        window.resize(QSize(width, height))
+        _process_events(40)
+        stats.iterations += 1
+    return stats
+
+
+def _stress_minimums_met(stats: _StressStats) -> bool:
+    return (
+        stats.hover_moves >= 100
+        and stats.theme_switches >= 20
+        and stats.sheet_cycles >= 10
+        and stats.close_reopen_cycles >= 10
+    )
+
+
+def _run_qt_audit(
+    runtime_log: _RuntimeLog,
+    *,
+    stress: bool = False,
+    stress_seconds: int = 0,
+) -> UiAuditReport:
     app = QApplication(["ui-audit", "--demo"])
     app.setApplicationName("LogistAI UI Audit")
     app.setQuitOnLastWindowClosed(False)
@@ -146,6 +223,7 @@ def _run_qt_audit(runtime_log: _RuntimeLog) -> UiAuditReport:
     tokens.apply_theme("light")
     container = build_container(demo_dashboard=True)
     screenshots: list[Path] = []
+    stress_stats = _StressStats()
     handler = _QtLogHandler(runtime_log)
     logging.getLogger().addHandler(handler)
     try:
@@ -155,6 +233,7 @@ def _run_qt_audit(runtime_log: _RuntimeLog) -> UiAuditReport:
             container.event_bus,
             command_dispatcher=container.command_bus,
             current_settings=container.settings_service.current,
+            background_on_close=stress,
             demo=True,
         )
         manager = ThemeManager(app, window)
@@ -172,7 +251,13 @@ def _run_qt_audit(runtime_log: _RuntimeLog) -> UiAuditReport:
                 _exercise_hover(window)
             _open_modal_and_palette(window, theme, screenshots)
 
-        window.close()
+        if stress:
+            stress_stats = _run_stress(window, manager, stress_seconds)
+
+        if stress:
+            window.hide()
+        else:
+            window.close()
         _process_events()
         container.database.close()
     finally:
@@ -188,15 +273,35 @@ def _run_qt_audit(runtime_log: _RuntimeLog) -> UiAuditReport:
         qt_warnings=combined.count("Qt"),
         invalid_qobjects=combined.count("Internal C++ object"),
         unhandled_asyncio_tasks=combined.count("Task exception was never retrieved"),
+        stress_enabled=stress,
+        stress_duration_seconds=stress_seconds,
+        stress_iterations=stress_stats.iterations,
+        hover_moves=stress_stats.hover_moves,
+        theme_switches=stress_stats.theme_switches,
+        sheet_cycles=stress_stats.sheet_cycles,
+        close_reopen_cycles=stress_stats.close_reopen_cycles,
     )
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Run LogistAI PySide UI audit.")
+    parser.add_argument("--stress", action="store_true", help="Run active navigation stress pass.")
+    parser.add_argument(
+        "--stress-seconds",
+        type=int,
+        default=1200,
+        help="Stress duration; Stage 10.4 acceptance uses 1200 seconds.",
+    )
+    args = parser.parse_args()
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     runtime_log = _RuntimeLog(sys.stderr)
     with (ARTIFACTS / "runtime.log").open("w", encoding="utf-8") as log_file:
         with redirect_stderr(runtime_log):
-            report = _run_qt_audit(runtime_log)
+            report = _run_qt_audit(
+                runtime_log,
+                stress=bool(args.stress),
+                stress_seconds=max(0, int(args.stress_seconds)) if args.stress else 0,
+            )
         log_file.write("".join(runtime_log.messages))
 
     (ARTIFACTS / "report.json").write_text(
@@ -208,6 +313,13 @@ def main() -> int:
     print(f"Qt warnings: {report.qt_warnings}")
     print(f"Invalid QObjects: {report.invalid_qobjects}")
     print(f"Unhandled asyncio tasks: {report.unhandled_asyncio_tasks}")
+    if report.stress_enabled:
+        print(f"Stress duration seconds: {report.stress_duration_seconds}")
+        print(f"Stress iterations: {report.stress_iterations}")
+        print(f"Hover moves: {report.hover_moves}")
+        print(f"Theme switches: {report.theme_switches}")
+        print(f"AI Sheet cycles: {report.sheet_cycles}")
+        print(f"Close/reopen cycles: {report.close_reopen_cycles}")
     return (
         0
         if report.runtime_errors == 0
